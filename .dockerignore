@@ -1,0 +1,17 @@
+.git
+.gitignore
+.venv
+.env
+__pycache__
+*.pyc
+.mimocode
+.vscode
+.idea
+logs
+media
+static
+for_docker/postgres_data
+for_docker/redis_data
+node_modules
+frontend/node_modules
+frontend/.vite

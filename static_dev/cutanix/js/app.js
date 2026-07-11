@@ -1,0 +1,567 @@
+(function() {
+  'use strict';
+
+  const API = '/api';
+  let user = null;
+  let currentTab = 'scan';
+  let refreshPricingCards = null;
+  let refreshProfileView = null;
+  let pulseTier = null;
+
+  function getInitData() {
+    try {
+      const tg = window.Telegram?.WebApp;
+      if (tg) {
+        if (tg.initDataRaw) return tg.initDataRaw;
+        if (tg.initData) return tg.initData;
+      }
+    } catch(e) {}
+    return '';
+  }
+
+  function initDataHeader() {
+    const d = getInitData();
+    const headers = {};
+    if (d) headers['X-Telegram-Init-Data'] = d;
+    try {
+      const u = window.Telegram?.WebApp?.initDataUnsafe?.user;
+      if (u) headers['X-Telegram-User'] = JSON.stringify(u);
+    } catch(e) {}
+    return headers;
+  }
+
+  async function apiGet(path) {
+    try {
+      const r = await fetch(API + path, { headers: initDataHeader() });
+      if (r.status === 401) return null;
+      const ct = r.headers.get('content-type') || '';
+      if (!ct.includes('json')) {
+        console.warn('[Cutanix] Non-JSON response for', path, 'content-type:', ct);
+        return null;
+      }
+      return r.json();
+    } catch(e) {
+      console.warn('[Cutanix] API error:', path, e.message);
+      return null;
+    }
+  }
+
+  async function apiPost(path, body) {
+    try {
+      const r = await fetch(API + path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...initDataHeader() },
+        body: JSON.stringify(body),
+      });
+      const ct = r.headers.get('content-type') || '';
+      if (!ct.includes('json')) return null;
+      return r.json();
+    } catch(e) { return null; }
+  }
+
+  async function loadProfile() {
+    user = await apiGet('/user/profile/');
+    if (!user) {
+      user = {
+        telegram_id: 0, username: '', first_name: 'Пользователь', last_name: '',
+        photo_url: '', subscription_tier: 'free', subscription_expires: null,
+        requests_used: 0, requests_limit: 3, is_subscription_active: true,
+      };
+    }
+  }
+
+  function hideLoading() {
+    const el = document.getElementById('loading');
+    if (el) el.remove();
+  }
+
+  function render() {
+    const app = document.getElementById('app');
+    app.innerHTML = `
+      <div id="tab-scan" class="tab-content active"></div>
+      <div id="tab-history" class="tab-content"></div>
+      <div id="tab-pricing" class="tab-content"></div>
+      <div id="tab-profile" class="tab-content"></div>
+      <nav class="fixed bottom-0 left-0 right-0 bg-[#1a1a24]/95 backdrop-blur border-t border-[#2a2a35] z-50">
+        <div class="flex justify-around items-center h-16 max-w-lg mx-auto">
+          ${['scan','history','pricing','profile'].map((id, i) =>
+            `<a href="#${id}" class="tab-link flex flex-col items-center gap-0.5 px-4 py-1 text-[10px] font-medium transition-all ${id === currentTab ? 'text-[#00ff88] scale-105' : 'text-gray-500'}" data-tab="${id}">
+              ${[`<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>`,
+                 `<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/></svg>`,
+                 `<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z"/></svg>`,
+                 `<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/></svg>`][i]}
+              <span class="text-[10px] font-medium">${['Проверка','История','Подписки','Профиль'][i]}</span>
+            </a>`
+          ).join('')}
+        </div>
+      </nav>
+    `;
+    document.querySelectorAll('.tab-link').forEach(el => {
+      el.addEventListener('click', e => {
+        e.preventDefault();
+        switchTab(el.dataset.tab);
+      });
+    });
+    renderTab(currentTab);
+  }
+
+  function haptic(style) {
+    try { window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.(style); } catch(e) {}
+  }
+  function hapticOk() {
+    try { window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('success'); } catch(e) {}
+  }
+
+  function switchTab(tab) {
+    currentTab = tab;
+    haptic('light');
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    document.getElementById('tab-' + tab).classList.add('active');
+    document.querySelectorAll('.tab-link').forEach(el => {
+      el.classList.toggle('text-[#00ff88]', el.dataset.tab === tab);
+      el.classList.toggle('scale-105', el.dataset.tab === tab);
+      el.classList.toggle('text-gray-500', el.dataset.tab !== tab);
+    });
+    renderTab(tab);
+  }
+
+  function renderTab(tab) {
+    const el = document.getElementById('tab-' + tab);
+    if (!el) return;
+    switch(tab) {
+      case 'scan': renderScan(el); break;
+      case 'history': renderHistory(el); break;
+      case 'pricing': renderPricing(el); break;
+      case 'profile': renderProfile(el); break;
+    }
+  }
+
+  function renderScan(el) {
+    el.innerHTML = `
+      <div class="flex items-center gap-2 mb-1">
+        <span class="text-2xl">🔬</span>
+        <h1 class="text-2xl font-bold"><span class="text-[#00ff88]">Cutanix</span></h1>
+      </div>
+      <p class="text-gray-400 text-sm mb-6">Проверьте безопасность вашего косметического средства</p>
+      <div id="photo-zone" class="relative overflow-hidden rounded-2xl border-2 border-dashed border-[#2a2a35] p-8 text-center cursor-pointer transition-all hover:border-[#00ff88]/30 hover:bg-[#1a1a24]/50 mb-4">
+        <input type="file" id="photo-input" accept="image/*" class="hidden">
+        <div class="w-14 h-14 mx-auto mb-3 rounded-full bg-[#2a2a35] flex items-center justify-center">
+          <svg class="w-7 h-7 text-[#00ff88]" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM18.75 10.5h.008v.008h-.008V10.5z"/>
+          </svg>
+        </div>
+        <p class="text-gray-200 text-sm font-medium">Нажмите, чтобы загрузить фото</p>
+        <p class="text-gray-500 text-xs mt-1.5">${user?.subscription_tier === 'free' ? 'Доступно в Pro-версии' : 'JPG, PNG до 10 МБ'}</p>
+      </div>
+      <textarea id="inci-text" placeholder="Или вставьте состав текстом (INCI)..." class="w-full bg-[#1a1a24] border border-[#2a2a35] rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 resize-none focus:outline-none focus:border-[#00ff88]/50 transition-all" rows="4"></textarea>
+      <button id="btn-analyze" class="btn btn-primary mt-3" disabled>Анализировать</button>
+      <div id="result-area" class="mt-6 space-y-4"></div>
+    `;
+
+    const textarea = document.getElementById('inci-text');
+    const btn = document.getElementById('btn-analyze');
+    const canAnalyze = user && (user.requests_used || 0) < (user.requests_limit || 3);
+
+    textarea.addEventListener('input', () => {
+      btn.disabled = !textarea.value.trim();
+    });
+
+    btn.addEventListener('click', async () => {
+      if (!textarea.value.trim()) return;
+      haptic('medium');
+      btn.disabled = true;
+      btn.textContent = 'Анализируем...';
+      const resultEl = document.getElementById('result-area');
+      resultEl.innerHTML = '<div class="bg-card p-6 neon-border text-center"><div class="w-8 h-8 border-2 border-[#00ff88] border-t-transparent rounded-full animate-spin mx-auto"></div><p class="text-gray-400 text-sm mt-3">Анализируем состав...</p></div>';
+      try {
+        const data = await apiPost('/analysis/', { text: textarea.value.trim() });
+        if (data) {
+          showResult(resultEl, data);
+          await loadProfile();
+        }
+      } catch(e) {
+        resultEl.innerHTML = '<div class="bg-card p-4 text-center text-red-400 text-sm">Ошибка анализа</div>';
+      }
+      btn.textContent = 'Анализировать';
+      btn.disabled = !textarea.value.trim();
+    });
+
+    const photoZone = document.getElementById('photo-zone');
+    const photoInput = document.getElementById('photo-input');
+    photoZone.addEventListener('click', () => {
+      haptic('light');
+      if (user?.subscription_tier === 'free') {
+        showPaywall();
+        return;
+      }
+      photoInput.click();
+    });
+    photoInput.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const resultEl = document.getElementById('result-area');
+      resultEl.innerHTML = '<div class="bg-card p-6 neon-border text-center"><div class="w-8 h-8 border-2 border-[#00ff88] border-t-transparent rounded-full animate-spin mx-auto"></div><p class="text-gray-400 text-sm mt-3">Анализируем по фото...</p></div>';
+      try {
+        const formData = new FormData();
+        formData.append('image', file);
+        const r = await fetch(API + '/analysis/', {
+          method: 'POST',
+          headers: initDataHeader(),
+          body: formData,
+        });
+        const data = await r.json();
+        if (data) { showResult(resultEl, data); await loadProfile(); }
+      } catch(e) {
+        resultEl.innerHTML = '<div class="bg-card p-4 text-center text-red-400 text-sm">Ошибка анализа фото</div>';
+      }
+    });
+
+    if (!canAnalyze && user) {
+      const p = document.createElement('p');
+      p.className = 'text-xs text-red-400 text-center mt-2';
+      p.textContent = 'Достигнут лимит запросов. Обновите тариф.';
+      btn.parentNode.appendChild(p);
+    }
+  }
+
+  function showResult(el, data) {
+    if (data.status !== 'ready' || !data.result) {
+      el.innerHTML = '<div class="bg-card p-4 text-center text-gray-400 text-sm">Анализ ещё не готов</div>';
+      return;
+    }
+    const r = data.result;
+    const safetyColor = r.safety_index >= 7 ? 'text-green-400' : r.safety_index >= 4 ? 'text-yellow-400' : 'text-red-400';
+    const verdictBg = r.verdict_en === 'safe' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400';
+    el.innerHTML = `
+      <div class="bg-card p-5 neon-border fade-in">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="font-semibold text-lg">Индекс безопасности</h3>
+          <span class="text-3xl font-bold ${safetyColor}">${r.safety_index}/10</span>
+        </div>
+        <div class="progress-bar mb-4">
+          <div class="progress-fill ${r.safety_index >= 7 ? 'bg-green-400' : r.safety_index >= 4 ? 'bg-yellow-400' : 'bg-red-400'}" style="width:${r.safety_index * 10}%"></div>
+        </div>
+        <div class="flex items-center justify-between text-sm">
+          <span class="text-gray-400">Комедогенность</span>
+          <span class="font-medium">${r.comedogenicity}/10</span>
+        </div>
+        <div class="mt-3 text-center">
+          <span class="inline-block px-4 py-1.5 rounded-full text-sm font-medium ${verdictBg}">${r.verdict}</span>
+        </div>
+        ${r.summary ? `<p class="text-gray-400 text-xs mt-3 text-center">${r.summary}</p>` : ''}
+      </div>
+      ${user?.subscription_tier === 'ultra' && r.components?.length ? `
+      <div class="bg-card p-4">
+        <h3 class="font-semibold mb-3 text-sm">Компоненты</h3>
+        <div class="space-y-2" id="components-list">${r.components.map((c, i) => `
+          <div class="bg-card-inner p-3 cursor-pointer" onclick="try{window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.('light')}catch(e){};this.querySelector('.comp-detail').classList.toggle('hidden')">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2.5">
+                <span class="w-2.5 h-2.5 rounded-full ${c.status === 'green' ? 'bg-green-400' : c.status === 'yellow' ? 'bg-yellow-400' : 'bg-red-400'}"></span>
+                <span class="text-sm font-medium">${c.name}</span>
+              </div>
+              <span class="text-gray-500 text-xs">▼</span>
+            </div>
+            <div class="comp-detail mt-2 text-xs text-gray-400 space-y-1 pl-5 hidden">
+              <p>${c.function}</p>
+              <p class="text-gray-500">${c.safety_note}</p>
+            </div>
+          </div>
+        `).join('')}</div>
+      </div>` : ''}
+    `;
+  }
+
+  function showPaywall() {
+    const overlay = document.createElement('div');
+    overlay.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur px-4';
+    overlay.innerHTML = `
+      <div class="bg-card p-6 max-w-sm w-full border border-[#00ff88]/30 fade-in">
+        <div class="text-center">
+          <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-[#00ff88]/10 flex items-center justify-center">
+            <svg class="w-8 h-8 text-[#00ff88]" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/>
+            </svg>
+          </div>
+          <h3 class="text-lg font-bold mb-2">Pro-версия</h3>
+          <p class="text-gray-400 text-sm mb-6">Сканирование по фото доступно в Pro-версии</p>
+          <div class="space-y-2.5">
+            <button class="btn btn-primary" onclick="switchTab('pricing'); this.closest('.fixed').remove()">Посмотреть тарифы</button>
+            <button class="btn btn-secondary" onclick="try{window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.('light')}catch(e){}; this.closest('.fixed').remove()">Отмена</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+  }
+
+  function renderHistory(el) {
+    el.innerHTML = '<h1 class="text-2xl font-bold mb-6">📚 <span class="text-[#00ff88]">История</span></h1><div class="text-center text-gray-500 py-8">Загрузка...</div>';
+    apiGet('/history/').then(data => {
+      if (!data || !data.results?.length) {
+        el.innerHTML = '<h1 class="text-2xl font-bold mb-6">📚 <span class="text-[#00ff88]">История</span></h1><div class="text-center text-gray-400 py-8"><p class="text-lg mb-2">История пуста</p><p class="text-sm text-gray-500">Проверьте состав, чтобы появилась запись</p></div>';
+        return;
+      }
+      el.innerHTML = `<h1 class="text-2xl font-bold mb-6">📚 <span class="text-[#00ff88]">История</span></h1><div class="space-y-3">${data.results.map(item => `
+        <div class="bg-card p-4 fade-in" onclick="showResult(document.getElementById('tab-scan'), ${JSON.stringify(item).replace(/"/g, '&quot;')}); switchTab('scan')">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-sm text-gray-400">${new Date(item.created_at).toLocaleDateString('ru-RU')}</span>
+            <span class="text-xs ${item.result?.verdict_en === 'safe' ? 'text-green-400' : 'text-red-400'}">${item.is_ready ? 'Готово' : 'В обработке'}</span>
+          </div>
+          <p class="text-sm text-gray-300 truncate">${item.text?.substring(0, 100) || 'Фото'}</p>
+          ${item.result ? `<div class="flex items-center gap-2 mt-2 text-xs"><span class="${item.result.safety_index >= 7 ? 'text-green-400' : item.result.safety_index >= 4 ? 'text-yellow-400' : 'text-red-400'}">Безопасность: ${item.result.safety_index}/10</span></div>` : ''}
+        </div>
+      `).join('')}</div>`;
+    }).catch(() => {
+      el.innerHTML = '<h1 class="text-2xl font-bold mb-6">📚 <span class="text-[#00ff88]">История</span></h1><div class="text-center text-red-400 py-8">Ошибка загрузки истории</div>';
+    });
+  }
+
+  function renderPricing(el) {
+    el.innerHTML = '<h1 class="text-2xl font-bold mb-6">💎 <span class="text-[#00ff88]">Подписки</span></h1><div class="text-center text-gray-500 py-8">Загрузка...</div>';
+    apiGet('/pricing/').then(pricing => {
+      if (!pricing?.length) { el.innerHTML = '<h1 class="text-2xl font-bold mb-6">💎 <span class="text-[#00ff88]">Подписки</span></h1><div class="text-center text-gray-400 py-8">Нет доступных тарифов</div>'; return; }
+      
+      const tiers = [...new Set(pricing.map(p => p.tier))];
+      let currentPeriod = 30;
+
+      el.innerHTML = `
+        <h1 class="text-2xl font-bold mb-6">💎 <span class="text-[#00ff88]">Подписки</span></h1>
+        <div class="relative flex bg-[#1a1a24] rounded-xl p-1 mb-6">
+        <div id="pricing-slider" class="floating-pill" style="transform: translateX(0%);"></div>
+          ${[30,60,90].map(d => `<button class="period-btn flex-1 relative z-10 py-2.5 rounded-lg text-sm font-medium transition-colors duration-300 ${d === currentPeriod ? 'text-[#0a0a0f]' : 'text-gray-400 hover:text-gray-300'}" data-period="${d}">${d} дн.</button>`).join('')}
+        </div>
+        <div id="pricing-cards" class="space-y-4"></div>
+      `;
+
+      const slider = el.querySelector('#pricing-slider');
+      const cardsContainer = el.querySelector('#pricing-cards');
+      const periodBtns = el.querySelectorAll('.period-btn');
+
+      function updateView() {
+        // Update slider position
+        slider.style.transform = `translateX(${currentPeriod === 30 ? '0%' : currentPeriod === 60 ? '100%' : '200%'})`;
+        
+        // Update button text colors
+        periodBtns.forEach(btn => {
+          if (parseInt(btn.dataset.period) === currentPeriod) {
+            btn.classList.remove('text-gray-400', 'hover:text-gray-300');
+            btn.classList.add('text-[#0a0a0f]');
+          } else {
+            btn.classList.add('text-gray-400', 'hover:text-gray-300');
+            btn.classList.remove('text-[#0a0a0f]');
+          }
+        });
+
+        // Render cards
+        function getPrice(tier) { const p = pricing.find(x => x.tier === tier && x.period_days === currentPeriod); return p?.price_rub || 0; }
+        function getFeatures(tier) { const p = pricing.find(x => x.tier === tier && x.period_days === currentPeriod); return p?.features || []; }
+        function getIsFeatured(tier) { const p = pricing.find(x => x.tier === tier && x.period_days === currentPeriod); return p?.is_featured || false; }
+        
+        cardsContainer.innerHTML = tiers.map(tier => `
+          <div class="bg-card p-5 ${getIsFeatured(tier) ? 'neon-border neon-glow relative' : ''} ${pulseTier === tier ? 'just-activated' : ''}">
+            ${getIsFeatured(tier) ? '<div class="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#00ff88] text-[#0a0a0f] text-xs font-bold px-3 py-0.5 rounded-full">ЛУЧШИЙ ВЫБОР</div>' : ''}
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-lg font-semibold">${tier === 'pro' ? 'Pro' : 'Ultra'}</h3>
+              ${user?.subscription_tier === tier ? `<span class="text-xs bg-[#00ff88]/20 text-[#00ff88] px-2 py-0.5 rounded-full ${pulseTier === tier ? 'badge-in' : ''}">Текущий</span>` : ''}
+            </div>
+            <div class="mb-4"><span class="text-3xl font-bold ${getIsFeatured(tier) ? 'text-[#00ff88]' : ''}">${getPrice(tier)}</span><span class="text-gray-500 text-sm"> / ${currentPeriod} дн.</span></div>
+            <ul class="space-y-2 mb-5">${getFeatures(tier).map(f => `<li class="flex items-start gap-2 text-sm text-gray-300"><span class="text-[#00ff88] mt-0.5">✓</span>${f}</li>`).join('')}</ul>
+            <button class="btn ${user?.subscription_tier === tier ? 'btn-secondary opacity-50 cursor-not-allowed' : 'btn-primary'}" ${user?.subscription_tier === tier ? 'disabled' : ''} onclick="activateTier('${tier}', ${currentPeriod}, this)">${user?.subscription_tier === tier ? 'Активен' : tier === 'pro' ? 'Выбрать Pro' : 'Активировать Ultra'}</button>
+          </div>
+        `).join('');
+      }
+
+      periodBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          haptic('light');
+          currentPeriod = parseInt(btn.dataset.period);
+          updateView();
+        });
+      });
+
+      updateView();
+      refreshPricingCards = updateView;
+
+    }).catch(() => {
+      el.innerHTML = '<h1 class="text-2xl font-bold mb-6">💎 <span class="text-[#00ff88]">Подписки</span></h1><div class="text-center text-red-400 py-8">Ошибка загрузки</div>';
+    });
+  }
+
+  window.activateTier = async function(tier, period, btn) {
+    // Если уже есть активный платный тариф и выбран другой — подтверждение замены
+    if (user && user.subscription_tier !== 'free' && user.subscription_tier !== tier) {
+      haptic('light');
+      showReplaceConfirm(tier, period, btn);
+      return;
+    }
+    haptic('heavy');
+    doActivate(tier, period, btn);
+  };
+
+  function showReplaceConfirm(tier, period, btn) {
+    const labels = { free: 'Free', pro: 'Pro', ultra: 'Ultra' };
+    const currentLabel = labels[user?.subscription_tier] || 'Free';
+    const newLabel = labels[tier] || tier;
+    const overlay = document.createElement('div');
+    overlay.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur px-4';
+    overlay.innerHTML = `
+      <div class="bg-card p-6 max-w-sm w-full border border-[#f59e0b]/40 fade-in">
+        <div class="text-center">
+          <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-[#f59e0b]/10 flex items-center justify-center">
+            <svg class="w-8 h-8 text-[#f59e0b]" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/>
+            </svg>
+          </div>
+          <h3 class="text-lg font-bold mb-2">Заменить тариф?</h3>
+          <p class="text-gray-400 text-sm mb-2">Ваш текущий тариф <span class="text-[#00ff88] font-medium">${currentLabel}</span> будет заменён на <span class="text-[#00ff88] font-medium">${newLabel}</span>.</p>
+          <p class="text-[#f59e0b]/80 text-xs mb-6">Остаток оплаченного периода не переносится, срок действия начнётся заново.</p>
+          <div class="space-y-2.5">
+            <button class="btn text-white font-semibold" id="confirm-replace" style="background:#f59e0b;">Заменить тариф</button>
+            <button class="btn btn-secondary" id="cancel-replace">Отмена</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    overlay.querySelector('#confirm-replace').addEventListener('click', () => {
+      haptic('heavy');
+      close();
+      doActivate(tier, period, btn);
+    });
+    overlay.querySelector('#cancel-replace').addEventListener('click', () => {
+      haptic('light');
+      close();
+    });
+  }
+
+  async function doActivate(tier, period, btn) {
+    btn.disabled = true;
+    btn.textContent = 'Активация...';
+    try {
+      const data = await apiPost('/payment/activate/', { tier, period_days: period });
+      if (data?.ok) {
+        btn.textContent = '✓ Активирован!';
+        btn.className = 'btn btn-success';
+        hapticOk();
+        await loadProfile();
+        // Плавно обновляем отдельные элементы интерфейса вместо перезагрузки
+        setTimeout(() => {
+          pulseTier = tier;
+          if (refreshPricingCards) refreshPricingCards();
+          if (refreshProfileView) refreshProfileView();
+          setTimeout(() => { pulseTier = null; }, 800);
+        }, 700);
+      }
+    } catch(e) {
+      btn.textContent = 'Ошибка';
+      btn.disabled = false;
+    }
+  }
+
+  window.switchTab = function(tab) {
+    switchTab(tab);
+  };
+
+  window.openLink = function(url) {
+    openLink(url);
+  };
+
+  function renderProfile(el) {
+    if (!user) { el.innerHTML = '<div class="text-center text-gray-500 py-8">Загрузка...</div>'; return; }
+    const progress = user.requests_limit > 0 ? (user.requests_used / user.requests_limit) * 100 : 0;
+    const tierColors = { free: 'text-gray-400', pro: 'text-blue-400', ultra: 'text-[#00ff88]' };
+    const tierLabels = { free: 'Free', pro: 'Pro', ultra: 'Ultra' };
+    const tierBg = { free: 'bg-gray-500/10', pro: 'bg-blue-500/10', ultra: 'bg-[#00ff88]/10' };
+    const tierColor = tierColors[user.subscription_tier] || tierColors.free;
+    const progressColor = progress > 80 ? '#ef4444' : progress > 50 ? '#f59e0b' : '#00ff88';
+
+    el.innerHTML = `
+      <h1 class="text-2xl font-bold mb-6 fade-in">👤 Профиль</h1>
+      <div class="bg-card p-5 relative overflow-hidden fade-in">
+        <div class="flex items-center gap-4 mb-5">
+          ${user.photo_url
+            ? `<img src="${user.photo_url}" alt="avatar" class="w-16 h-16 rounded-full object-cover border-2 border-[#2a2a35]" onerror="this.style.display='none';this.nextSibling.style.display='flex'">`
+            : ''}
+          <div class="w-16 h-16 rounded-full bg-[#2a2a35] flex items-center justify-center text-2xl font-bold text-[#00ff88] ${user.photo_url ? 'hidden' : ''}">${user.first_name?.[0] || 'U'}</div>
+          <div class="flex-1 min-w-0">
+            <h2 class="font-semibold text-lg truncate">${user.first_name || 'Пользователь'}${user.last_name ? ' ' + user.last_name : ''}</h2>
+            ${user.username ? `<p class="text-gray-400 text-sm truncate">@${user.username}</p>` : ''}
+          </div>
+        </div>
+        <div class="bg-card-inner p-4 mb-3">
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-gray-400 text-sm">Тариф</span>
+            <span class="font-bold px-3 py-1 rounded-full text-sm ${tierColor} ${tierBg[user.subscription_tier] || tierBg.free}">${tierLabels[user.subscription_tier] || 'Free'}</span>
+          </div>
+          ${user.subscription_expires && user.subscription_tier !== 'free' ? `<div class="flex items-center justify-between mb-3"><span class="text-gray-400 text-sm">Действует до</span><span class="text-sm">${new Date(user.subscription_expires).toLocaleDateString('ru-RU')}</span></div>` : ''}
+          <div>
+            <div class="flex items-center justify-between text-xs text-gray-400 mb-1">
+              <span>Запросов</span>
+              <span>${user.requests_used || 0}/${user.requests_limit || 0}</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill" style="width:${Math.min(progress, 100)}%;background:${progressColor}"></div>
+            </div>
+          </div>
+        </div>
+        <div class="bg-card-inner p-4">
+          <div class="flex items-center justify-between">
+            <span class="text-gray-400 text-sm">Telegram ID</span>
+            <span class="text-sm font-mono text-gray-300">${user.telegram_id || '—'}</span>
+          </div>
+        </div>
+      </div>
+      <div class="mt-6 space-y-2.5">
+        <button class="btn btn-secondary" onclick="openLink('https://t.me/S112OS')">
+          <svg class="w-5 h-5 text-[#00ff88] shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z"/></svg>
+          Помощь и Поддержка
+        </button>
+        <button class="btn btn-secondary" onclick="openLink('https://telegra.ph/Polzovatelskoe-soglashenie-04-01-19')">
+          <svg class="w-5 h-5 text-blue-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          Пользовательское соглашение
+        </button>
+        <button class="btn btn-secondary" onclick="openLink('https://telegra.ph/Politika-konfidencialnosti-06-21-31')">
+          <svg class="w-5 h-5 text-purple-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+          Политика конфиденциальности
+        </button>
+        ${user.is_admin ? `
+        <a href="/admin/" class="btn mt-2" style="background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.35);color:#fbbf24;">
+          <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>
+          Панель администратора
+        </a>` : ''}
+      </div>
+    `;
+    refreshProfileView = () => renderProfile(el);
+  }
+
+  function openLink(url) {
+    try { window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.('light'); } catch(e) {}
+    const tg = window.Telegram?.WebApp;
+    if (!tg) {
+      window.open(url, '_blank');
+      return;
+    }
+    // t.me ссылки открываем внутри Telegram
+    if (url.includes('t.me/') && tg.openTelegramLink) {
+      tg.openTelegramLink(url);
+      return;
+    }
+    // Всё остальное (telegra.ph и др.) — внутри TG через Instant View / встроенный браузер
+    if (tg.openLink) {
+      tg.openLink(url, { try_instant_view: true });
+    }
+  }
+
+  async function init() {
+    try { window.Telegram?.WebApp?.ready?.(); window.Telegram?.WebApp?.expand?.(); } catch(e) {}
+    await loadProfile();
+    hideLoading();
+    currentTab = 'scan';
+    render();
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+})();
