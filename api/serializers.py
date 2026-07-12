@@ -81,6 +81,7 @@ class HistorySerializer(serializers.ModelSerializer):
         fields = (
             "task_id",
             "input_text",
+            "image",
             "status",
             "result",
             "created_at",

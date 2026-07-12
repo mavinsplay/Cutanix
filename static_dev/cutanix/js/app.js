@@ -59,6 +59,59 @@
     } catch(e) { return null; }
   }
 
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+  async function postAnalysis(payload) {
+    let r;
+    if (payload instanceof FormData) {
+      r = await fetch(API + '/analysis/', { method: 'POST', headers: initDataHeader(), body: payload });
+    } else {
+      r = await fetch(API + '/analysis/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...initDataHeader() },
+        body: JSON.stringify(payload),
+      });
+    }
+    if (!r.ok) {
+      let msg = 'Ошибка анализа';
+      try { const j = await r.json(); if (j.error) msg = j.error; } catch(e) {}
+      throw new Error(msg);
+    }
+    const ct = r.headers.get('content-type') || '';
+    if (!ct.includes('json')) return null;
+    return r.json();
+  }
+
+  function progressCardHTML(label) {
+    return `
+      <div class="bg-card p-6 neon-border text-center fade-in">
+        <p class="text-gray-200 text-sm font-medium mb-4">${label}</p>
+        <div class="progress-bar progress-indeterminate">
+          <div class="progress-fill"></div>
+        </div>
+        <p class="text-gray-500 text-xs mt-3">Распознаём состав и оцениваем безопасность…</p>
+      </div>
+    `;
+  }
+
+  async function pollAnalysis(taskId, resultEl) {
+    for (let i = 0; i < 40; i++) {
+      const data = await apiGet('/analysis/' + taskId + '/');
+      if (data && data.status === 'ready' && data.result) {
+        hapticOk();
+        showResult(resultEl, data);
+        await loadProfile();
+        return;
+      }
+      if (data && data.status === 'failed') {
+        resultEl.innerHTML = '<div class="bg-card p-4 text-center text-red-400 text-sm">Ошибка анализа</div>';
+        return;
+      }
+      await sleep(1500);
+    }
+    resultEl.innerHTML = '<div class="bg-card p-4 text-center text-red-400 text-sm">Превышено время ожидания</div>';
+  }
+
   async function loadProfile() {
     user = await apiGet('/user/profile/');
     if (!user) {
@@ -111,6 +164,29 @@
   function hapticOk() {
     try { window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('success'); } catch(e) {}
   }
+  window.haptic = haptic;
+  function esc(s) {    return (s || '').replace(/[&<>"']/g, c => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+  }
+
+  const ICONS = {
+    scan: `<svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 0 1-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 0 1 4.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0 1 12 18a9.065 9.065 0 0 1-6.23-2.207L4.2 15.3m15.6 0 1.045.261a3 3 0 0 1 2.105 2.839V18a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-.6a3 3 0 0 1 2.105-2.839l1.045-.261"/></svg>`,
+    history: `<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/></svg>`,
+    pricing: `<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 002.455 2.456zM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z"/></svg>`,
+    profile: `<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/></svg>`,
+    check: `<svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>`,
+    chevron: `<svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>`,
+  };
+
+  function spinnerHTML(label) {
+    return `<div class="flex flex-col items-center justify-center py-16 text-gray-500 fade-in">
+      <svg width="32" height="32" viewBox="0 0 40 40" class="animate-spin mb-3">
+        <circle cx="20" cy="20" r="16" fill="none" stroke="#00ff88" stroke-width="3" stroke-dasharray="80" stroke-dashoffset="60" stroke-linecap="round"/>
+      </svg>
+      ${label ? `<span class="text-sm">${esc(label)}</span>` : ''}
+    </div>`;
+  }
 
   function switchTab(tab) {
     currentTab = tab;
@@ -139,57 +215,128 @@
   function renderScan(el) {
     el.innerHTML = `
       <div class="flex items-center gap-2 mb-1">
-        <span class="text-2xl">🔬</span>
+        <span class="text-[#00ff88]">${ICONS.scan}</span>
         <h1 class="text-2xl font-bold"><span class="text-[#00ff88]">Cutanix</span></h1>
       </div>
       <p class="text-gray-400 text-sm mb-6">Проверьте безопасность вашего косметического средства</p>
+      <div class="relative flex bg-[#1a1a24] rounded-xl p-1 mb-5">
+        <div id="mode-slider" class="floating-pill" style="width: calc(50% - 4px); transform: translateX(0%);"></div>
+        <button class="mode-btn flex-1 relative z-10 py-2.5 rounded-lg text-sm font-medium transition-colors duration-300 text-[#0a0a0f]" data-mode="photo">Фото</button>
+        <button class="mode-btn flex-1 relative z-10 py-2.5 rounded-lg text-sm font-medium transition-colors duration-300 text-gray-400 hover:text-gray-300" data-mode="text">Текст</button>
+      </div>
       <div id="photo-zone" class="relative overflow-hidden rounded-2xl border-2 border-dashed border-[#2a2a35] p-8 text-center cursor-pointer transition-all hover:border-[#00ff88]/30 hover:bg-[#1a1a24]/50 mb-4">
         <input type="file" id="photo-input" accept="image/*" class="hidden">
-        <div class="w-14 h-14 mx-auto mb-3 rounded-full bg-[#2a2a35] flex items-center justify-center">
-          <svg class="w-7 h-7 text-[#00ff88]" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z"/>
-            <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM18.75 10.5h.008v.008h-.008V10.5z"/>
-          </svg>
+        <div id="photo-preview" class="hidden absolute inset-0 bg-cover bg-center"></div>
+        <div id="photo-change" class="hidden absolute bottom-2 left-1/2 -translate-x-1/2 z-20 bg-[#0a0a0f]/80 text-[#00ff88] text-xs px-3 py-1.5 rounded-full border border-[#00ff88]/30">Изменить фото</div>
+        <div id="photo-placeholder" class="relative z-10">
+          <div class="w-14 h-14 mx-auto mb-3 rounded-full bg-[#2a2a35] flex items-center justify-center">
+            <svg class="w-7 h-7 text-[#00ff88]" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z"/>
+              <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM18.75 10.5h.008v.008h-.008V10.5z"/>
+            </svg>
+          </div>
+          <p class="text-gray-200 text-sm font-medium">Нажмите, чтобы загрузить фото</p>
+          <p class="text-gray-500 text-xs mt-1.5">${user?.subscription_tier === 'free' ? 'Доступно в Pro-версии' : 'JPG, PNG до 10 МБ'}</p>
         </div>
-        <p class="text-gray-200 text-sm font-medium">Нажмите, чтобы загрузить фото</p>
-        <p class="text-gray-500 text-xs mt-1.5">${user?.subscription_tier === 'free' ? 'Доступно в Pro-версии' : 'JPG, PNG до 10 МБ'}</p>
       </div>
-      <textarea id="inci-text" placeholder="Или вставьте состав текстом (INCI)..." class="w-full bg-[#1a1a24] border border-[#2a2a35] rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 resize-none focus:outline-none focus:border-[#00ff88]/50 transition-all" rows="4"></textarea>
-      <button id="btn-analyze" class="btn btn-primary mt-3" disabled>Анализировать</button>
+      <textarea id="inci-text" placeholder="Вставьте состав текстом (INCI)..." class="hidden w-full bg-[#1a1a24] border border-[#2a2a35] rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 resize-none focus:outline-none focus:border-[#00ff88]/50 transition-all" rows="5"></textarea>
+      <button id="btn-analyze" class="btn btn-primary mt-3" disabled>Анализировать фото</button>
       <div id="result-area" class="mt-6 space-y-4"></div>
     `;
 
     const textarea = document.getElementById('inci-text');
     const btn = document.getElementById('btn-analyze');
-    const canAnalyze = user && (user.requests_used || 0) < (user.requests_limit || 3);
-
-    textarea.addEventListener('input', () => {
-      btn.disabled = !textarea.value.trim();
-    });
-
-    btn.addEventListener('click', async () => {
-      if (!textarea.value.trim()) return;
-      haptic('medium');
-      btn.disabled = true;
-      btn.textContent = 'Анализируем...';
-      const resultEl = document.getElementById('result-area');
-      resultEl.innerHTML = '<div class="bg-card p-6 neon-border text-center"><div class="w-8 h-8 border-2 border-[#00ff88] border-t-transparent rounded-full animate-spin mx-auto"></div><p class="text-gray-400 text-sm mt-3">Анализируем состав...</p></div>';
-      try {
-        const data = await apiPost('/analysis/', { text: textarea.value.trim() });
-        if (data) {
-          showResult(resultEl, data);
-          await loadProfile();
-        }
-      } catch(e) {
-        resultEl.innerHTML = '<div class="bg-card p-4 text-center text-red-400 text-sm">Ошибка анализа</div>';
-      }
-      btn.textContent = 'Анализировать';
-      btn.disabled = !textarea.value.trim();
-    });
-
     const photoZone = document.getElementById('photo-zone');
     const photoInput = document.getElementById('photo-input');
+    const photoPreview = document.getElementById('photo-preview');
+    const photoPlaceholder = document.getElementById('photo-placeholder');
+    const photoChange = document.getElementById('photo-change');
+    const modeSlider = document.getElementById('mode-slider');
+    const modeBtns = el.querySelectorAll('.mode-btn');
+    const canAnalyze = user && (user.requests_used || 0) < (user.requests_limit || 3);
+    let selectedPhoto = null;
+    let mode = 'photo';
+    let analyzing = false;
+
+    function setLocked(lock) {
+      analyzing = lock;
+      textarea.disabled = lock;
+      modeBtns.forEach(b => b.disabled = lock);
+      photoInput.disabled = lock;
+      photoZone.style.pointerEvents = lock ? 'none' : '';
+      photoChange.classList.toggle('opacity-40', lock);
+    }
+
+    function updateBtn() {
+      const ready = mode === 'photo' ? !!selectedPhoto : !!textarea.value.trim();
+      btn.disabled = !ready;
+      btn.textContent = mode === 'photo' ? 'Анализировать фото' : 'Анализировать';
+    }
+
+    function updateMode() {
+      modeSlider.style.transform = mode === 'photo' ? 'translateX(0%)' : 'translateX(100%)';
+      modeBtns.forEach(b => {
+        if (b.dataset.mode === mode) {
+          b.classList.remove('text-gray-400', 'hover:text-gray-300');
+          b.classList.add('text-[#0a0a0f]');
+        } else {
+          b.classList.add('text-gray-400', 'hover:text-gray-300');
+          b.classList.remove('text-[#0a0a0f]');
+        }
+      });
+      photoZone.classList.toggle('hidden', mode !== 'photo');
+      textarea.classList.toggle('hidden', mode !== 'text');
+      resultArea().innerHTML = '';
+      updateBtn();
+    }
+
+    function resultArea() {
+      return document.getElementById('result-area');
+    }
+
+    modeBtns.forEach(b => {
+      b.addEventListener('click', () => {
+        if (analyzing) return;
+        haptic('light');
+        mode = b.dataset.mode;
+        updateMode();
+      });
+    });
+
+    textarea.addEventListener('input', updateBtn);
+
+    btn.addEventListener('click', async () => {
+      if (analyzing) return;
+      if (mode === 'photo' && !selectedPhoto) return;
+      if (mode === 'text' && !textarea.value.trim()) return;
+      haptic('medium');
+      btn.disabled = true;
+      setLocked(true);
+      const prevText = btn.textContent;
+      btn.textContent = 'Анализируем...';
+      const resultEl = resultArea();
+      resultEl.innerHTML = progressCardHTML('Анализируем состав…');
+      try {
+        let data;
+        if (mode === 'photo' && selectedPhoto) {
+          const fd = new FormData();
+          fd.append('image', selectedPhoto);
+          data = await postAnalysis(fd);
+        } else {
+          data = await postAnalysis({ text: textarea.value.trim() });
+        }
+        if (data?.task_id) await pollAnalysis(data.task_id, resultEl);
+      } catch(e) {
+        resultEl.innerHTML = `<div class="bg-card p-4 text-center text-red-400 text-sm">${e.message || 'Ошибка анализа'}</div>`;
+      } finally {
+        setLocked(false);
+        btn.textContent = prevText;
+        updateBtn();
+      }
+    });
+
     photoZone.addEventListener('click', () => {
+      if (analyzing) return;
       haptic('light');
       if (user?.subscription_tier === 'free') {
         showPaywall();
@@ -197,24 +344,23 @@
       }
       photoInput.click();
     });
-    photoInput.addEventListener('change', async (e) => {
+
+    photoInput.addEventListener('change', (e) => {
+      if (analyzing) return;
       const file = e.target.files?.[0];
       if (!file) return;
-      const resultEl = document.getElementById('result-area');
-      resultEl.innerHTML = '<div class="bg-card p-6 neon-border text-center"><div class="w-8 h-8 border-2 border-[#00ff88] border-t-transparent rounded-full animate-spin mx-auto"></div><p class="text-gray-400 text-sm mt-3">Анализируем по фото...</p></div>';
-      try {
-        const formData = new FormData();
-        formData.append('image', file);
-        const r = await fetch(API + '/analysis/', {
-          method: 'POST',
-          headers: initDataHeader(),
-          body: formData,
-        });
-        const data = await r.json();
-        if (data) { showResult(resultEl, data); await loadProfile(); }
-      } catch(e) {
-        resultEl.innerHTML = '<div class="bg-card p-4 text-center text-red-400 text-sm">Ошибка анализа фото</div>';
-      }
+      selectedPhoto = file;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        photoPreview.style.backgroundImage = `url(${ev.target.result})`;
+        photoPreview.classList.remove('hidden');
+        photoChange.classList.remove('hidden');
+        photoPlaceholder.classList.add('hidden');
+      };
+      reader.readAsDataURL(file);
+      resultArea().innerHTML = '';
+      updateBtn();
+      photoInput.value = '';
     });
 
     if (!canAnalyze && user) {
@@ -223,17 +369,18 @@
       p.textContent = 'Достигнут лимит запросов. Обновите тариф.';
       btn.parentNode.appendChild(p);
     }
+
+    updateMode();
   }
 
-  function showResult(el, data) {
-    if (data.status !== 'ready' || !data.result) {
-      el.innerHTML = '<div class="bg-card p-4 text-center text-gray-400 text-sm">Анализ ещё не готов</div>';
-      return;
-    }
-    const r = data.result;
+  function resultCardHTML(r) {
+    const statusOrder = { red: 0, yellow: 1, green: 2 };
+    const comps = [...(r.components || [])].sort(
+      (a, b) => (statusOrder[a.status] ?? 3) - (statusOrder[b.status] ?? 3)
+    );
     const safetyColor = r.safety_index >= 7 ? 'text-green-400' : r.safety_index >= 4 ? 'text-yellow-400' : 'text-red-400';
     const verdictBg = r.verdict_en === 'safe' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400';
-    el.innerHTML = `
+    return `
       <div class="bg-card p-5 neon-border fade-in">
         <div class="flex items-center justify-between mb-4">
           <h3 class="font-semibold text-lg">Индекс безопасности</h3>
@@ -251,17 +398,17 @@
         </div>
         ${r.summary ? `<p class="text-gray-400 text-xs mt-3 text-center">${r.summary}</p>` : ''}
       </div>
-      ${user?.subscription_tier === 'ultra' && r.components?.length ? `
+      ${comps.length ? `
       <div class="bg-card p-4">
         <h3 class="font-semibold mb-3 text-sm">Компоненты</h3>
-        <div class="space-y-2" id="components-list">${r.components.map((c, i) => `
+        <div class="space-y-2" id="components-list">${comps.map((c, i) => `
           <div class="bg-card-inner p-3 cursor-pointer" onclick="try{window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.('light')}catch(e){};this.querySelector('.comp-detail').classList.toggle('hidden')">
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2.5">
                 <span class="w-2.5 h-2.5 rounded-full ${c.status === 'green' ? 'bg-green-400' : c.status === 'yellow' ? 'bg-yellow-400' : 'bg-red-400'}"></span>
                 <span class="text-sm font-medium">${c.name}</span>
               </div>
-              <span class="text-gray-500 text-xs">▼</span>
+              ${ICONS.chevron}
             </div>
             <div class="comp-detail mt-2 text-xs text-gray-400 space-y-1 pl-5 hidden">
               <p>${c.function}</p>
@@ -272,6 +419,52 @@
       </div>` : ''}
     `;
   }
+
+  function showResult(el, data) {
+    if (data.status !== 'ready' || !data.result) {
+      el.innerHTML = '<div class="bg-card p-4 text-center text-gray-400 text-sm">Анализ ещё не готов</div>';
+      return;
+    }
+    el.innerHTML = resultCardHTML(data.result);
+  }
+
+  function showHistoryDetail(item) {
+    const overlay = document.createElement('div');
+    overlay.className = 'fixed inset-0 z-50 flex items-start justify-center bg-black/70 backdrop-blur px-4 pt-10 pb-10 overflow-y-auto';
+    const st = item.status;
+    const statusText = st === 'ready' ? 'Готово' : st === 'failed' ? 'Ошибка' : 'В обработке';
+    const statusColor = st === 'ready' ? 'text-green-400' : st === 'failed' ? 'text-red-400' : 'text-yellow-400';
+    const reqText = item.input_text || (item.image ? 'Состав распознан с фото' : 'Без текста');
+    const reqTextHtml = esc(reqText);
+    const reqLabel = item.image ? 'Состав (распознано с фото)' : 'Состав (INCI)';
+    const resultHTML = (st === 'ready' && item.result)
+      ? resultCardHTML(item.result)
+      : '<div class="bg-card p-4 text-center text-gray-400 text-sm">Анализ ещё не готов</div>';
+    overlay.innerHTML = `
+      <div class="bg-card p-6 max-w-md w-full border border-[#00ff88]/20 modal-in fade-in">
+        <div class="flex items-start justify-between mb-4">
+          <div>
+            <h3 class="font-bold text-lg">Запрос</h3>
+            <p class="text-xs text-gray-500 mt-0.5">${new Date(item.created_at).toLocaleString('ru-RU')}</p>
+          </div>
+          <button class="text-gray-400 hover:text-white text-2xl leading-none -mt-1" onclick="try{window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.('light')}catch(e){}; this.closest('.fixed').remove()">×</button>
+        </div>
+        <div class="mb-4">
+          <span class="text-xs ${statusColor}">${statusText}</span>
+        </div>
+        <div class="bg-[#1a1a24] border border-[#2a2a35] rounded-xl p-3 mb-4">
+          <p class="text-xs text-gray-500 mb-1.5">${reqLabel}</p>
+          <p class="text-sm text-gray-200 whitespace-pre-wrap break-words">${reqTextHtml}</p>
+        </div>
+        <div class="space-y-4">${resultHTML}</div>
+      </div>
+    `;
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) overlay.remove();
+    });
+    document.body.appendChild(overlay);
+  }
+  window.showHistoryDetail = showHistoryDetail;
 
   function showPaywall() {
     const overlay = document.createElement('div');
@@ -297,37 +490,43 @@
   }
 
   function renderHistory(el) {
-    el.innerHTML = '<h1 class="text-2xl font-bold mb-6">📚 <span class="text-[#00ff88]">История</span></h1><div class="text-center text-gray-500 py-8">Загрузка...</div>';
+    el.innerHTML = `<h1 class="text-2xl font-bold mb-6"><span class="inline-flex items-center">${ICONS.history}</span> <span class="text-[#00ff88]">История</span></h1>` + spinnerHTML('Загрузка...');
     apiGet('/history/').then(data => {
       if (!data || !data.results?.length) {
-        el.innerHTML = '<h1 class="text-2xl font-bold mb-6">📚 <span class="text-[#00ff88]">История</span></h1><div class="text-center text-gray-400 py-8"><p class="text-lg mb-2">История пуста</p><p class="text-sm text-gray-500">Проверьте состав, чтобы появилась запись</p></div>';
+        el.innerHTML = `<h1 class="text-2xl font-bold mb-6"><span class="inline-flex items-center">${ICONS.history}</span> <span class="text-[#00ff88]">История</span></h1><div class="text-center text-gray-400 py-8 fade-in"><p class="text-lg mb-2">История пуста</p><p class="text-sm text-gray-500">Проверьте состав, чтобы появилась запись</p></div>`;
         return;
       }
-      el.innerHTML = `<h1 class="text-2xl font-bold mb-6">📚 <span class="text-[#00ff88]">История</span></h1><div class="space-y-3">${data.results.map(item => `
-        <div class="bg-card p-4 fade-in" onclick="showResult(document.getElementById('tab-scan'), ${JSON.stringify(item).replace(/"/g, '&quot;')}); switchTab('scan')">
+      el.innerHTML = `<h1 class="text-2xl font-bold mb-6"><span class="inline-flex items-center">${ICONS.history}</span> <span class="text-[#00ff88]">История</span></h1><div class="space-y-3">${data.results.map(item => {
+        const st = item.status;
+        const statusText = st === 'ready' ? 'Готово' : st === 'failed' ? 'Ошибка' : 'В обработке';
+        const statusColor = st === 'ready' ? 'text-green-400' : st === 'failed' ? 'text-red-400' : 'text-yellow-400';
+        const preview = item.input_text || (item.image ? 'Состав распознан с фото' : 'Без текста');
+        const short = preview.length > 110 ? preview.slice(0, 110) + '…' : preview;
+        return `
+        <div class="bg-card p-4 min-h-[128px] fade-in cursor-pointer flex flex-col" onclick="haptic('light'); showHistoryDetail(${JSON.stringify(item).replace(/"/g, '&quot;')})">
           <div class="flex items-center justify-between mb-2">
             <span class="text-sm text-gray-400">${new Date(item.created_at).toLocaleDateString('ru-RU')}</span>
-            <span class="text-xs ${item.result?.verdict_en === 'safe' ? 'text-green-400' : 'text-red-400'}">${item.is_ready ? 'Готово' : 'В обработке'}</span>
+            <span class="text-xs ${statusColor}">${statusText}</span>
           </div>
-          <p class="text-sm text-gray-300 truncate">${item.text?.substring(0, 100) || 'Фото'}</p>
+          <p class="text-sm text-gray-300 line-clamp-2 flex-1">${esc(short)}</p>
           ${item.result ? `<div class="flex items-center gap-2 mt-2 text-xs"><span class="${item.result.safety_index >= 7 ? 'text-green-400' : item.result.safety_index >= 4 ? 'text-yellow-400' : 'text-red-400'}">Безопасность: ${item.result.safety_index}/10</span></div>` : ''}
-        </div>
-      `).join('')}</div>`;
+        </div>`;
+      }).join('')}</div>`;
     }).catch(() => {
-      el.innerHTML = '<h1 class="text-2xl font-bold mb-6">📚 <span class="text-[#00ff88]">История</span></h1><div class="text-center text-red-400 py-8">Ошибка загрузки истории</div>';
+      el.innerHTML = `<h1 class="text-2xl font-bold mb-6"><span class="inline-flex items-center">${ICONS.history}</span> <span class="text-[#00ff88]">История</span></h1><div class="text-center text-red-400 py-8 fade-in">Ошибка загрузки истории</div>`;
     });
   }
 
   function renderPricing(el) {
-    el.innerHTML = '<h1 class="text-2xl font-bold mb-6">💎 <span class="text-[#00ff88]">Подписки</span></h1><div class="text-center text-gray-500 py-8">Загрузка...</div>';
+    el.innerHTML = `<h1 class="text-2xl font-bold mb-6"><span class="inline-flex items-center">${ICONS.pricing}</span> <span class="text-[#00ff88]">Подписки</span></h1>` + spinnerHTML('Загрузка...');
     apiGet('/pricing/').then(pricing => {
-      if (!pricing?.length) { el.innerHTML = '<h1 class="text-2xl font-bold mb-6">💎 <span class="text-[#00ff88]">Подписки</span></h1><div class="text-center text-gray-400 py-8">Нет доступных тарифов</div>'; return; }
+      if (!pricing?.length) { el.innerHTML = `<h1 class="text-2xl font-bold mb-6"><span class="inline-flex items-center">${ICONS.pricing}</span> <span class="text-[#00ff88]">Подписки</span></h1><div class="text-center text-gray-400 py-8 fade-in">Нет доступных тарифов</div>`; return; }
       
       const tiers = [...new Set(pricing.map(p => p.tier))];
       let currentPeriod = 30;
 
       el.innerHTML = `
-        <h1 class="text-2xl font-bold mb-6">💎 <span class="text-[#00ff88]">Подписки</span></h1>
+        <h1 class="text-2xl font-bold mb-6"><span class="inline-flex items-center">${ICONS.pricing}</span> <span class="text-[#00ff88]">Подписки</span></h1>
         <div class="relative flex bg-[#1a1a24] rounded-xl p-1 mb-6">
         <div id="pricing-slider" class="floating-pill" style="transform: translateX(0%);"></div>
           ${[30,60,90].map(d => `<button class="period-btn flex-1 relative z-10 py-2.5 rounded-lg text-sm font-medium transition-colors duration-300 ${d === currentPeriod ? 'text-[#0a0a0f]' : 'text-gray-400 hover:text-gray-300'}" data-period="${d}">${d} дн.</button>`).join('')}
@@ -367,7 +566,7 @@
               ${user?.subscription_tier === tier ? `<span class="text-xs bg-[#00ff88]/20 text-[#00ff88] px-2 py-0.5 rounded-full ${pulseTier === tier ? 'badge-in' : ''}">Текущий</span>` : ''}
             </div>
             <div class="mb-4"><span class="text-3xl font-bold ${getIsFeatured(tier) ? 'text-[#00ff88]' : ''}">${getPrice(tier)}</span><span class="text-gray-500 text-sm"> / ${currentPeriod} дн.</span></div>
-            <ul class="space-y-2 mb-5">${getFeatures(tier).map(f => `<li class="flex items-start gap-2 text-sm text-gray-300"><span class="text-[#00ff88] mt-0.5">✓</span>${f}</li>`).join('')}</ul>
+            <ul class="space-y-2 mb-5">${getFeatures(tier).map(f => `<li class="flex items-start gap-2 text-sm text-gray-300"><span class="text-[#00ff88] mt-0.5">${ICONS.check}</span>${f}</li>`).join('')}</ul>
             <button class="btn ${user?.subscription_tier === tier ? 'btn-secondary opacity-50 cursor-not-allowed' : 'btn-primary'}" ${user?.subscription_tier === tier ? 'disabled' : ''} onclick="activateTier('${tier}', ${currentPeriod}, this)">${user?.subscription_tier === tier ? 'Активен' : tier === 'pro' ? 'Выбрать Pro' : 'Активировать Ultra'}</button>
           </div>
         `).join('');
@@ -385,7 +584,7 @@
       refreshPricingCards = updateView;
 
     }).catch(() => {
-      el.innerHTML = '<h1 class="text-2xl font-bold mb-6">💎 <span class="text-[#00ff88]">Подписки</span></h1><div class="text-center text-red-400 py-8">Ошибка загрузки</div>';
+      el.innerHTML = `<h1 class="text-2xl font-bold mb-6"><span class="inline-flex items-center">${ICONS.pricing}</span> <span class="text-[#00ff88]">Подписки</span></h1><div class="text-center text-red-400 py-8 fade-in">Ошибка загрузки</div>`;
     });
   }
 
@@ -443,7 +642,7 @@
     try {
       const data = await apiPost('/payment/activate/', { tier, period_days: period });
       if (data?.ok) {
-        btn.textContent = '✓ Активирован!';
+        btn.textContent = 'Активирован';
         btn.className = 'btn btn-success';
         hapticOk();
         await loadProfile();
@@ -479,7 +678,7 @@
     const progressColor = progress > 80 ? '#ef4444' : progress > 50 ? '#f59e0b' : '#00ff88';
 
     el.innerHTML = `
-      <h1 class="text-2xl font-bold mb-6 fade-in">👤 Профиль</h1>
+      <h1 class="text-2xl font-bold mb-6 fade-in flex items-center gap-2">${ICONS.profile} Профиль</h1>
       <div class="bg-card p-5 relative overflow-hidden fade-in">
         <div class="flex items-center gap-4 mb-5">
           ${user.photo_url

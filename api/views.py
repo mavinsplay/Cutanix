@@ -7,7 +7,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from analysis.models import AnalysisTask
-from analysis.services import analyze_inci
+from analysis.tasks import run_analysis_task
 from payments.models import Payment, PricingPlan
 from payments.services import (
     create_invoice,
@@ -15,6 +15,7 @@ from payments.services import (
 )
 from api.serializers import (  # noqa: ABS101
     AnalysisResultSerializer,
+    AnalysisTaskSerializer,
     HistorySerializer,
     PaymentCreateSerializer,
     PricingSerializer,
@@ -85,17 +86,16 @@ class AnalysisCreateView(APIView):
             status="processing",
         )
 
-        result = analyze_inci(text)
-        task.result = result
-        task.status = "ready"
-        task.save(update_fields=[
-            "result", "status", "updated_at",
-        ])
+        try:
+            run_analysis_task.delay(task.id)
+        except Exception:
+            run_analysis_task(task.id)
+        task.refresh_from_db()
 
         user.increment_usage()
 
         return Response(
-            AnalysisResultSerializer(
+            AnalysisTaskSerializer(
                 task
             ).data,
             status=(

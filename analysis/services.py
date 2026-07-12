@@ -1,8 +1,13 @@
+import base64
 import hashlib
+import io
 import json
+import os
+import re
 
 from django.conf import settings
 from django.core.cache import cache
+from PIL import Image
 import httpx
 
 __all__ = [
@@ -11,6 +16,7 @@ __all__ = [
     "get_cached_result",
     "save_to_cache",
     "analyze_inci",
+    "extract_inci_from_image",
 ]
 
 
@@ -108,7 +114,7 @@ def call_groq_api(text):
                 ),
             },
             json={
-                "model": "llama3-70b-8192",
+                "model": "llama-3.3-70b-versatile",
                 "messages": [
                     {
                         "role": "user",
@@ -128,9 +134,78 @@ def call_groq_api(text):
                 "message"
             ]["content"]
         )
-        return json.loads(content)
+        return _parse_json(content)
     except Exception:
         return None
+
+
+def call_openrouter_api(text):
+    key = os.getenv("OPENROUTER_API_KEY")
+    if not key:
+        return None
+    try:
+        response = httpx.post(
+            (
+                "https://openrouter.ai/api/v1/"
+                "chat/completions"
+            ),
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": (
+                    "application/json"
+                ),
+                "HTTP-Referer": (
+                    "https://cutanix.app"
+                ),
+                "X-Title": "Cutanix",
+            },
+            json={
+                "model": os.getenv(
+                    "OPENROUTER_ANALYSIS_MODEL",
+                    "meta-llama/"
+                    "llama-3.3-70b-instruct:free",
+                ),
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": (
+                            ANALYSIS_PROMPT + text
+                        ),
+                    }
+                ],
+                "temperature": 0.3,
+                "max_tokens": 2000,
+            },
+            timeout=60,
+        )
+        response.raise_for_status()
+        content = (
+            response.json()["choices"][0][
+                "message"
+            ]["content"]
+        )
+        return _parse_json(content)
+    except Exception:
+        return None
+
+
+def _parse_json(content):
+    if not content:
+        return None
+    try:
+        return json.loads(content)
+    except Exception:
+        pass
+    fence = re.search(
+        r"```(?:json)?\s*([\s\S]*?)```",
+        content,
+    )
+    if fence:
+        try:
+            return json.loads(fence.group(1))
+        except Exception:
+            return None
+    return None
 
 
 def call_together_api(text):
@@ -175,7 +250,7 @@ def call_together_api(text):
                 "message"
             ]["content"]
         )
-        return json.loads(content)
+        return _parse_json(content)
     except Exception:
         return None
 
@@ -185,7 +260,9 @@ def analyze_inci(text):
     if cached:
         return cached
 
-    result = call_groq_api(text)
+    result = call_openrouter_api(text)
+    if result is None:
+        result = call_groq_api(text)
     if result is None:
         result = call_together_api(text)
     if result is None:
@@ -204,3 +281,84 @@ def analyze_inci(text):
 
     save_to_cache(text, result)
     return result
+
+
+OCR_PROMPT = (
+    "Это этикетка косметического средства. "
+    "Извлеки полный список INCI (состав) — только "
+    "названия ингредиентов на латинице, в том же "
+    "порядке, через запятую. Игнорируй описания, "
+    "предупреждения и текст на других языках. "
+    "Верни ТОЛЬКО список ингредиентов, без пояснений."
+)
+
+OCR_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
+
+
+def _prepare_image(image_bytes, max_size=1024):
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+        img = img.convert("RGB")
+        img.thumbnail((max_size, max_size))
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=85)
+        return base64.b64encode(
+            buf.getvalue()
+        ).decode()
+    except Exception:
+        return None
+
+
+def extract_inci_from_image(image_bytes):
+    if not settings.GROQ_API_KEY:
+        return None
+    b64 = _prepare_image(image_bytes)
+    if not b64:
+        return None
+    try:
+        response = httpx.post(
+            (
+                "https://api.groq.com/openai/v1/"
+                "chat/completions"
+            ),
+            headers={
+                "Authorization": (
+                    f"Bearer {settings.GROQ_API_KEY}"
+                ),
+                "Content-Type": (
+                    "application/json"
+                ),
+            },
+            json={
+                "model": OCR_MODEL,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": OCR_PROMPT,
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": (
+                                        "data:image/jpeg;"
+                                        f"base64,{b64}"
+                                    )
+                                },
+                            },
+                        ],
+                    }
+                ],
+                "temperature": 0.2,
+                "max_tokens": 1500,
+            },
+            timeout=60,
+        )
+        response.raise_for_status()
+        return response.json()["choices"][0][
+            "message"
+        ]["content"].strip()
+    except Exception:
+        return None

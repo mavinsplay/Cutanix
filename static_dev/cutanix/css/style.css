@@ -24,6 +24,23 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .btn-secondary:hover { background: #2a2a35; }
 .progress-bar { height: 10px; border-radius: 999px; overflow: hidden; background: #2a2a35; }
 .progress-fill { height: 100%; border-radius: 999px; transition: width 0.7s ease-out; }
+.progress-indeterminate { position: relative; overflow: hidden; }
+@keyframes progressIndeterminate {
+  0% { left: -35%; width: 35%; }
+  50% { width: 55%; }
+  100% { left: 100%; width: 35%; }
+}
+.progress-indeterminate .progress-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 35%;
+  background: linear-gradient(90deg, rgba(0,255,136,0.1), #00ff88, rgba(0,255,136,0.1));
+  border-radius: 999px;
+  box-shadow: 0 0 12px rgba(0,255,136,0.45);
+  animation: progressIndeterminate 1.4s ease-in-out infinite;
+}
 .tier-free { color: #999; }
 .tier-pro { color: #60a5fa; }
 .tier-ultra { color: #00ff88; }
@@ -54,4 +71,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
   from { opacity: 0; transform: scale(0.8); }
   to { opacity: 1; transform: scale(1); }
 }
-.badge-in { animation: badgeIn 0.35s ease-out; }
+ .badge-in { animation: badgeIn 0.35s ease-out; }
+@keyframes modalIn {
+  from { opacity: 0; transform: translateY(12px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.modal-in { animation: modalIn 0.32s cubic-bezier(0.16, 1, 0.3, 1); }

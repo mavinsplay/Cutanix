@@ -199,6 +199,9 @@ CORS_ALLOW_ALL_ORIGINS = DEBUG
 IS_REDIS = get_bool_env(
     os.getenv("DJANGO_USE_REDIS", "false"),
 )
+CELERY_ALWAYS_EAGER = get_bool_env(
+    os.getenv("CELERY_ALWAYS_EAGER", "false"),
+)
 
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = os.getenv("REDIS_PORT", "6379")
@@ -225,7 +228,6 @@ if IS_REDIS:
             ),
         }
     }
-    CELERY_TASK_ALWAYS_EAGER = True
 else:
     CACHES = {
         "default": {
@@ -241,7 +243,10 @@ else:
         },
     }
 
+CELERY_TASK_ALWAYS_EAGER = CELERY_ALWAYS_EAGER
 CELERY_BROKER_URL = REDIS_URI
+CELERY_RESULT_BACKEND = "rpc://"
+CELERY_TASK_IGNORE_RESULT = True
 CELERY_ACCEPT_CONTENT = ["application/json"]
 CELERY_TASK_SERIALIZER = "json"
 
