@@ -1,0 +1,97 @@
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${CUTANIX_DOMAIN};
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+        try_files $uri =404;
+        access_log off;
+        log_not_found off;
+        default_type "text/plain";
+    }
+
+    location /static/ {
+        alias /static/;
+        expires 7d;
+        add_header Cache-Control "public" always;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+
+    access_log /var/log/nginx/access_http_cutanix.log;
+    error_log  /var/log/nginx/error_http_cutanix.log;
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name ${CUTANIX_DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/${CUTANIX_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${CUTANIX_DOMAIN}/privkey.pem;
+    ssl_trusted_certificate /etc/letsencrypt/live/${CUTANIX_DOMAIN}/chain.pem;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+    ssl_session_cache shared:SSL:50m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+    ssl_ecdh_curve secp384r1;
+
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options DENY always;
+
+    client_max_body_size 50G;
+    client_body_buffer_size 10M;
+    client_body_timeout 7200s;
+    send_timeout 7200s;
+
+    keepalive_timeout 300;
+    keepalive_requests 100;
+    reset_timedout_connection on;
+
+    proxy_read_timeout 7200s;
+    proxy_connect_timeout 7200s;
+    proxy_send_timeout 7200s;
+    proxy_request_buffering off;
+    proxy_buffering off;
+
+    proxy_buffer_size 512k;
+    proxy_buffers 8 512k;
+    proxy_busy_buffers_size 1024k;
+    proxy_temp_file_write_size 512k;
+
+    location / {
+        proxy_pass http://django_prod:8000;
+        proxy_http_version 1.1;
+
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $http_connection;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        access_log /var/log/nginx/cutanix_proxy_access.log;
+        error_log  /var/log/nginx/cutanix_proxy_error.log;
+    }
+
+    location /static/ {
+        alias /static/;
+        expires 7d;
+        add_header Cache-Control "public" always;
+    }
+
+    location /media/ {
+        alias /media/;
+        expires 7d;
+        add_header X-Content-Type-Options "nosniff" always;
+    }
+
+    error_log /var/log/nginx/cutanix_error.log info;
+    access_log /var/log/nginx/cutanix_access.log;
+}

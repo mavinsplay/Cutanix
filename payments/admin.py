@@ -19,27 +19,34 @@ class PricingPlanAdmin(admin.ModelAdmin):
     ordering = ("base_price_kopeks",)
 
     fieldsets = (
-        (None, {
-            "fields": (
-                "tier",
-                "base_price_kopeks",
-                "is_active",
-            ),
-        }),
-        ("Внешний вид", {
-            "fields": (
-                "is_featured",
-                "features",
-            ),
-            "description": (
-                "features — список строк в формате JSON, "
-                'например: ["До 50 запросов", "Фото этикетки"]'
-            ),
-        }),
+        (
+            None,
+            {
+                "fields": (
+                    "tier",
+                    "base_price_kopeks",
+                    "is_active",
+                ),
+            },
+        ),
+        (
+            "Внешний вид",
+            {
+                "fields": (
+                    "is_featured",
+                    "features",
+                ),
+                "description": (
+                    "features — список строк в формате JSON, "
+                    'например: ["До 50 запросов", "Фото этикетки"]'
+                ),
+            },
+        ),
     )
 
     def price_rub_display(self, obj):
         return f"{obj.price_rub:.0f} ₽"
+
     price_rub_display.short_description = "Цена"
 
     def is_featured_display(self, obj):
@@ -48,6 +55,7 @@ class PricingPlanAdmin(admin.ModelAdmin):
                 '<span style="color:#00c853;font-weight:bold;">⭐ Лучший выбор</span>'
             )
         return "—"
+
     is_featured_display.short_description = "Плашка"
 
 

@@ -31,9 +31,7 @@ def run_analysis_task(self, task_id):
 
         if not text:
             task.status = "failed"
-            task.result = {
-                "error": "Не удалось извлечь состав"
-            }
+            task.result = {"error": "Не удалось извлечь состав"}
             task.save(
                 update_fields=[
                     "status",
@@ -53,9 +51,7 @@ def run_analysis_task(self, task_id):
             ]
         )
     except Exception as exc:
-        logger.exception(
-            "Analysis task %s failed: %s", task_id, exc
-        )
+        logger.exception("Analysis task %s failed: %s", task_id, exc)
         try:
             task.status = "failed"
             task.result = {"error": "Ошибка анализа"}

@@ -69,9 +69,7 @@ class Payment(models.Model):
         on_delete=models.CASCADE,
         related_name="payments",
     )
-    tier = models.CharField(
-        max_length=10, choices=TIER_CHOICES
-    )
+    tier = models.CharField(max_length=10, choices=TIER_CHOICES)
     period_days = models.PositiveIntegerField()
     amount_kopeks = models.PositiveIntegerField()
     telegram_payment_id = models.CharField(
@@ -85,9 +83,7 @@ class Payment(models.Model):
         choices=STATUS_CHOICES,
         default="pending",
     )
-    created_at = models.DateTimeField(
-        auto_now_add=True
-    )
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         verbose_name = "Платёж"
@@ -95,10 +91,7 @@ class Payment(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return (
-            f"Payment {self.telegram_payment_id} "
-            f"[{self.status}]"
-        )
+        return f"Payment {self.telegram_payment_id} " f"[{self.status}]"
 
     @property
     def amount_rub(self):

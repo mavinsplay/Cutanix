@@ -6,6 +6,7 @@ __all__ = ["PRICES", "get_price_kopeks", "create_invoice"]
 
 def get_price_kopeks(tier, period_days):
     from payments.models import PricingPlan
+
     plan = PricingPlan.objects.filter(tier=tier, is_active=True).first()
     if not plan:
         return 0
@@ -26,10 +27,7 @@ def create_invoice(
         return None
     try:
         response = httpx.post(
-            (
-                f"https://api.telegram.org/"
-                f"bot{token}/sendInvoice"
-            ),
+            (f"https://api.telegram.org/" f"bot{token}/sendInvoice"),
             json={
                 "chat_id": chat_id,
                 "title": title,

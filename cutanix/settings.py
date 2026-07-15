@@ -22,7 +22,8 @@ DEBUG = get_bool_env(
 )
 
 ALLOWED_HOSTS = os.getenv(
-    "DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1",
+    "DJANGO_ALLOWED_HOSTS",
+    "localhost,127.0.0.1",
 ).split(",")
 
 CSRF_TRUSTED_ORIGINS = os.getenv(
@@ -31,7 +32,8 @@ CSRF_TRUSTED_ORIGINS = os.getenv(
 ).split(",")
 
 SITE_URL = os.getenv(
-    "DJANGO_SITE_URL", "http://127.0.0.1:8000",
+    "DJANGO_SITE_URL",
+    "http://127.0.0.1:8000",
 )
 
 INSTALLED_APPS = [
@@ -66,24 +68,15 @@ ROOT_URLCONF = "cutanix.urls"
 
 TEMPLATES = [
     {
-        "BACKEND": (
-            "django.template.backends.django"
-            ".DjangoTemplates"
-        ),
+        "BACKEND": ("django.template.backends.django" ".DjangoTemplates"),
         "DIRS": [BASE_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
                 "django.template.context_processors.debug",
                 "django.template.context_processors.request",
-                (
-                    "django.contrib.auth.context_processors"
-                    ".auth"
-                ),
-                (
-                    "django.contrib.messages.context_processors"
-                    ".messages"
-                ),
+                ("django.contrib.auth.context_processors" ".auth"),
+                ("django.contrib.messages.context_processors" ".messages"),
             ],
         },
     },
@@ -99,25 +92,27 @@ if DB == "sqlite":
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
             "NAME": BASE_DIR / "db.sqlite3",
-        }
+        },
     }
 else:
     DATABASES = {
         "default": {
-            "ENGINE": (
-                "django.db.backends.postgresql"
-            ),
+            "ENGINE": ("django.db.backends.postgresql"),
             "NAME": os.getenv(
-                "POSTGRES_DB", "cutanix_db",
+                "POSTGRES_DB",
+                "cutanix_db",
             ),
             "USER": os.getenv(
-                "POSTGRES_USER", "postgres",
+                "POSTGRES_USER",
+                "postgres",
             ),
             "PASSWORD": os.getenv(
-                "POSTGRES_PASSWORD", "root",
+                "POSTGRES_PASSWORD",
+                "root",
             ),
             "HOST": os.getenv(
-                "POSTGRES_HOST", "localhost",
+                "POSTGRES_HOST",
+                "localhost",
             ),
             "PORT": int(
                 os.getenv("POSTGRES_PORT", "5432"),
@@ -128,9 +123,7 @@ else:
 if "test" in sys.argv:
     DATABASES = {
         "default": {
-            "ENGINE": (
-                "django.db.backends.sqlite3"
-            ),
+            "ENGINE": ("django.db.backends.sqlite3"),
             "NAME": ":memory:",
         },
     }
@@ -144,8 +137,7 @@ AUTH_PASSWORD_VALIDATORS = [
     },
     {
         "NAME": (
-            "django.contrib.auth.password_validation"
-            ".MinimumLengthValidator"
+            "django.contrib.auth.password_validation" ".MinimumLengthValidator"
         ),
     },
     {
@@ -176,9 +168,7 @@ STATICFILES_DIRS = [
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
-DEFAULT_AUTO_FIELD = (
-    "django.db.models.BigAutoField"
-)
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
@@ -188,15 +178,36 @@ REST_FRAMEWORK = {
         "rest_framework.permissions.IsAuthenticated",
     ],
     "DEFAULT_PAGINATION_CLASS": (
-        "rest_framework.pagination"
-        ".PageNumberPagination"
+        "rest_framework.pagination" ".PageNumberPagination"
     ),
     "PAGE_SIZE": 20,
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.UserRateThrottle",
+        "api.throttling.BurstAnonThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "user": os.getenv(
+            "THROTTLE_USER_RATE",
+            "120/min",
+        ),
+        "anon_burst": os.getenv(
+            "THROTTLE_ANON_RATE",
+            "30/min",
+        ),
+        "analysis_burst": os.getenv(
+            "THROTTLE_ANALYSIS_BURST",
+            "10/min",
+        ),
+        "analysis_sustained": os.getenv(
+            "THROTTLE_ANALYSIS_SUSTAINED",
+            "100/day",
+        ),
+    },
 }
 
 CORS_ALLOW_ALL_ORIGINS = DEBUG
 
-IS_REDIS = get_bool_env(
+USE_REDIS = get_bool_env(
     os.getenv("DJANGO_USE_REDIS", "false"),
 )
 CELERY_ALWAYS_EAGER = get_bool_env(
@@ -210,36 +221,25 @@ REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
 
 if REDIS_PASSWORD:
     REDIS_URI = (
-        f"redis://:{REDIS_PASSWORD}"
-        f"@{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+        f"redis://:{REDIS_PASSWORD}" f"@{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
     )
 else:
-    REDIS_URI = (
-        f"redis://{REDIS_HOST}:{REDIS_PORT}"
-        f"/{REDIS_DB}"
-    )
+    REDIS_URI = f"redis://{REDIS_HOST}:{REDIS_PORT}" f"/{REDIS_DB}"
 
-if IS_REDIS:
+if USE_REDIS:
     CACHES = {
         "default": {
-            "BACKEND": (
-                "django.core.cache.backends"
-                ".locmem.LocMemCache"
-            ),
-        }
+            "BACKEND": ("django_redis.cache.RedisCache"),
+            "LOCATION": REDIS_URI,
+            "OPTIONS": {
+                "CLIENT_CLASS": ("django_redis.client.DefaultClient"),
+            },
+        },
     }
 else:
     CACHES = {
         "default": {
-            "BACKEND": (
-                "django_redis.cache.RedisCache"
-            ),
-            "LOCATION": REDIS_URI,
-            "OPTIONS": {
-                "CLIENT_CLASS": (
-                    "django_redis.client.DefaultClient"
-                ),
-            },
+            "BACKEND": ("django.core.cache.backends" ".locmem.LocMemCache"),
         },
     }
 
@@ -251,10 +251,20 @@ CELERY_ACCEPT_CONTENT = ["application/json"]
 CELERY_TASK_SERIALIZER = "json"
 
 TELEGRAM_BOT_TOKEN = os.getenv(
-    "TELEGRAM_BOT_TOKEN", "",
+    "TELEGRAM_BOT_TOKEN",
+    "",
 )
 TELEGRAM_CHANNEL_ID = os.getenv(
-    "TELEGRAM_CHANNEL_ID", "",
+    "TELEGRAM_CHANNEL_ID",
+    "",
+)
+TELEGRAM_CHANNEL_USERNAME = (
+    os.getenv(
+        "TELEGRAM_CHANNEL_USERNAME",
+        "",
+    )
+    .lstrip("@")
+    .strip()
 )
 ADMIN_TELEGRAM_IDS = [
     int(tid.strip())
@@ -264,7 +274,8 @@ ADMIN_TELEGRAM_IDS = [
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 TOGETHER_API_KEY = os.getenv(
-    "TOGETHER_API_KEY", "",
+    "TOGETHER_API_KEY",
+    "",
 )
 
 LOG_DIR = BASE_DIR / "logs"
@@ -275,10 +286,7 @@ LOGGING = {
     "disable_existing_loggers": False,
     "formatters": {
         "verbose": {
-            "format": (
-                "[{levelname}] {asctime} "
-                "{name}: {message}"
-            ),
+            "format": ("[{levelname}] {asctime} " "{name}: {message}"),
             "style": "{",
         },
     },
@@ -305,16 +313,12 @@ LOGGING = {
         },
         "api": {
             "handlers": ["console"],
-            "level": (
-                "DEBUG" if DEBUG else "WARNING"
-            ),
+            "level": ("DEBUG" if DEBUG else "WARNING"),
             "propagate": False,
         },
         "bot": {
             "handlers": ["console"],
-            "level": (
-                "DEBUG" if DEBUG else "WARNING"
-            ),
+            "level": ("DEBUG" if DEBUG else "WARNING"),
             "propagate": False,
         },
     },
@@ -327,9 +331,8 @@ if DEBUG:
 
     def _show_toolbar(request):
         """Show toolbar only on admin and __debug__ routes."""
-        return (
-            request.path.startswith("/admin/")
-            or request.path.startswith("/__debug__/")
+        return request.path.startswith("/admin/") or request.path.startswith(
+            "/__debug__/"
         )
 
     DEBUG_TOOLBAR_CONFIG = {

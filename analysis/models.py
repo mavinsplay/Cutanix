@@ -25,9 +25,7 @@ class AnalysisTask(models.Model):
         unique=True,
         db_index=True,
     )
-    input_text = models.TextField(
-        blank=True, default=""
-    )
+    input_text = models.TextField(blank=True, default="")
     image = models.ImageField(
         upload_to="analysis/",
         blank=True,
@@ -38,15 +36,9 @@ class AnalysisTask(models.Model):
         choices=STATUS_CHOICES,
         default="pending",
     )
-    result = models.JSONField(
-        null=True, blank=True
-    )
-    created_at = models.DateTimeField(
-        auto_now_add=True
-    )
-    updated_at = models.DateTimeField(
-        auto_now=True
-    )
+    result = models.JSONField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         verbose_name = "Задача анализа"
@@ -54,10 +46,7 @@ class AnalysisTask(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return (
-            f"Task {self.task_id} "
-            f"[{self.status}]"
-        )
+        return f"Task {self.task_id} " f"[{self.status}]"
 
 
 class CachedAnalysis(models.Model):
@@ -67,15 +56,11 @@ class CachedAnalysis(models.Model):
         db_index=True,
     )
     result = models.JSONField()
-    created_at = models.DateTimeField(
-        auto_now_add=True
-    )
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         verbose_name = "Кэшированный анализ"
-        verbose_name_plural = (
-            "Кэшированные анализы"
-        )
+        verbose_name_plural = "Кэшированные анализы"
 
     def __str__(self):
         return f"Cache {self.content_hash[:16]}..."

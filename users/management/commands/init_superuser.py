@@ -12,9 +12,7 @@ class Command(BaseCommand):
     load_dotenv()
 
     def handle(self, *args, **options):
-        superuser_name = os.getenv(
-            "DJANGO_SUPERUSER_NAME", "admin"
-        )
+        superuser_name = os.getenv("DJANGO_SUPERUSER_NAME", "admin")
         superuser_email = os.getenv(
             "DJANGO_SUPERUSER_EMAIL",
             "admin@cutanix.ru",
@@ -26,9 +24,7 @@ class Command(BaseCommand):
 
         if (
             not get_user_model()
-            .objects.filter(
-                username=superuser_name
-            )
+            .objects.filter(username=superuser_name)
             .exists()
         ):
             get_user_model().objects.create_superuser(
@@ -38,13 +34,9 @@ class Command(BaseCommand):
             )
 
             self.stdout.write(
-                self.style.SUCCESS(
-                    "Superuser created!"
-                ),
+                self.style.SUCCESS("Superuser created!"),
             )
         else:
             self.stdout.write(
-                self.style.SUCCESS(
-                    "Superuser already exists!"
-                ),
+                self.style.SUCCESS("Superuser already exists!"),
             )

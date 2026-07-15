@@ -7,7 +7,16 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from analysis.models import AnalysisTask
+from analysis.security import (
+    MAX_INCI_LENGTH,
+    PromptInjectionError,
+    sanitize_inci_input,
+)
 from analysis.tasks import run_analysis_task
+from api.throttling import (
+    AnalysisBurstThrottle,
+    AnalysisSustainedThrottle,
+)
 from payments.models import Payment, PricingPlan
 from payments.services import (
     create_invoice,
@@ -35,48 +44,64 @@ class ProfileView(generics.RetrieveAPIView):
 
 
 class AnalysisCreateView(APIView):
+    throttle_classes = [
+        AnalysisBurstThrottle,
+        AnalysisSustainedThrottle,
+    ]
+
     def post(self, request):
         user = request.user
         if not user.can_make_request():
             return Response(
-                {
-                    "error": (
-                        "Лимит запросов исчерпан"
-                    )
-                },
-                status=(
-                    status.HTTP_403_FORBIDDEN
-                ),
+                {"error": ("Лимит запросов исчерпан")},
+                status=(status.HTTP_403_FORBIDDEN),
             )
 
-        text = request.data.get(
-            "text", ""
-        ).strip()
+        text = request.data.get("text", "").strip()
         image = request.data.get("image")
 
         if not text and not image:
             return Response(
+                {"error": ("Требуется текст или фото")},
+                status=(status.HTTP_400_BAD_REQUEST),
+            )
+
+        if len(text) > MAX_INCI_LENGTH:
+            return Response(
                 {
                     "error": (
-                        "Требуется текст или фото"
+                        "Слишком длинный состав "
+                        f"(макс. {MAX_INCI_LENGTH} "
+                        "символов)"
                     )
                 },
-                status=(
-                    status.HTTP_400_BAD_REQUEST
-                ),
+                status=(status.HTTP_400_BAD_REQUEST),
             )
+
+        if text:
+            try:
+                text = sanitize_inci_input(text, strict=True)
+            except PromptInjectionError:
+                logger.warning(
+                    "Prompt injection blocked " "for user %s",
+                    getattr(user, "telegram_id", "?"),
+                )
+                return Response(
+                    {
+                        "error": (
+                            "Недопустимый ввод: "
+                            "текст должен содержать "
+                            "только состав (INCI)"
+                        )
+                    },
+                    status=(status.HTTP_400_BAD_REQUEST),
+                )
 
         tier = user.subscription_tier
         if tier == "free" and image:
             return Response(
-                {
-                    "error": (
-                        "Фото доступно в Pro"
-                    )
-                },
-                status=(
-                    status.HTTP_403_FORBIDDEN
-                ),
+                {"error": ("Фото доступно в Pro")},
+                status=(status.HTTP_403_FORBIDDEN),
             )
 
         task = AnalysisTask.objects.create(
@@ -95,25 +120,17 @@ class AnalysisCreateView(APIView):
         user.increment_usage()
 
         return Response(
-            AnalysisTaskSerializer(
-                task
-            ).data,
-            status=(
-                status.HTTP_201_CREATED
-            ),
+            AnalysisTaskSerializer(task).data,
+            status=(status.HTTP_201_CREATED),
         )
 
 
-class AnalysisStatusView(
-    generics.RetrieveAPIView
-):
+class AnalysisStatusView(generics.RetrieveAPIView):
     serializer_class = AnalysisResultSerializer
     lookup_field = "task_id"
 
     def get_queryset(self):
-        return AnalysisTask.objects.filter(
-            user=self.request.user
-        )
+        return AnalysisTask.objects.filter(user=self.request.user)
 
 
 class HistoryView(generics.ListAPIView):
@@ -123,16 +140,16 @@ class HistoryView(generics.ListAPIView):
         user = self.request.user
         if user.subscription_tier == "free":
             return AnalysisTask.objects.none()
-        return AnalysisTask.objects.filter(
-            user=user
-        )
+        return AnalysisTask.objects.filter(user=user)
 
 
 class PricingView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        plans = PricingPlan.objects.filter(is_active=True).order_by("-is_featured", "base_price_kopeks")
+        plans = PricingPlan.objects.filter(is_active=True).order_by(
+            "-is_featured", "base_price_kopeks"
+        )
         pricing = []
         for plan in plans:
             base = plan.base_price_kopeks
@@ -143,34 +160,24 @@ class PricingView(APIView):
                         "tier": plan.tier,
                         "period_days": days,
                         "price_kopeks": price_kop,
-                        "price_rub": int(
-                            price_kop / 100
-                        ),
+                        "price_rub": int(price_kop / 100),
                         "features": plan.features,
                         "is_featured": plan.is_featured,
                     }
                 )
-        serializer = PricingSerializer(
-            pricing, many=True
-        )
+        serializer = PricingSerializer(pricing, many=True)
         return Response(serializer.data)
 
 
 class PaymentCreateView(APIView):
     def post(self, request):
-        serializer = PaymentCreateSerializer(
-            data=request.data
-        )
-        serializer.is_valid(
-            raise_exception=True
-        )
+        serializer = PaymentCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
         tier = data["tier"]
         period_days = data["period_days"]
-        amount = get_price_kopeks(
-            tier, period_days
-        )
+        amount = get_price_kopeks(tier, period_days)
 
         payment = Payment.objects.create(
             user=request.user,
@@ -181,10 +188,7 @@ class PaymentCreateView(APIView):
 
         chat_id = request.user.telegram_id
         title = f"Cutanix {tier.upper()}"
-        description = (
-            f"Подписка {tier.upper()} "
-            f"на {period_days} дней"
-        )
+        description = f"Подписка {tier.upper()} " f"на {period_days} дней"
         payload = json.dumps(
             {
                 "payment_id": payment.id,
@@ -194,9 +198,7 @@ class PaymentCreateView(APIView):
         )
         prices = [
             {
-                "label": (
-                    f"Cutanix {tier.upper()}"
-                ),
+                "label": (f"Cutanix {tier.upper()}"),
                 "amount": amount,
             }
         ]
@@ -210,23 +212,11 @@ class PaymentCreateView(APIView):
         )
 
         if result and result.get("ok"):
-            return Response(
-                {
-                    "invoice": (
-                        result["result"]
-                    )
-                }
-            )
+            return Response({"invoice": (result["result"])})
 
         return Response(
-            {
-                "error": (
-                    "Не удалось создать счёт"
-                )
-            },
-            status=(
-                status.HTTP_500_INTERNAL_SERVER_ERROR
-            ),
+            {"error": ("Не удалось создать счёт")},
+            status=(status.HTTP_500_INTERNAL_SERVER_ERROR),
         )
 
 
@@ -235,30 +225,18 @@ class PaymentWebhookView(APIView):
 
     def post(self, request):
         update = request.data
-        query = update.get(
-            "pre_checkout_query"
-        )
+        query = update.get("pre_checkout_query")
         if query:
             return Response({"ok": True})
 
-        payment = update.get(
-            "successful_payment"
-        )
+        payment = update.get("successful_payment")
         if payment:
             try:
-                payload = json.loads(
-                    payment["invoice_payload"]
-                )
-                payment_obj = (
-                    Payment.objects.get(
-                        id=payload["payment_id"]
-                    )
-                )
-                payment_obj.telegram_payment_id = (
-                    payment[
-                        "telegram_payment_id"
-                    ]
-                )
+                payload = json.loads(payment["invoice_payload"])
+                payment_obj = Payment.objects.get(id=payload["payment_id"])
+                payment_obj.telegram_payment_id = payment[
+                    "telegram_payment_id"
+                ]
                 payment_obj.status = "succeeded"
                 payment_obj.save()
 
@@ -277,12 +255,8 @@ class PaymentWebhookView(APIView):
 
 class PaymentActivateView(APIView):
     def post(self, request):
-        serializer = PaymentCreateSerializer(
-            data=request.data
-        )
-        serializer.is_valid(
-            raise_exception=True
-        )
+        serializer = PaymentCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
         tier = data["tier"]
@@ -303,12 +277,12 @@ class PaymentActivateView(APIView):
             },
         )
 
-        request.user.activate_subscription(
-            tier, period_days
-        )
+        request.user.activate_subscription(tier, period_days)
 
-        return Response({
-            "ok": True,
-            "tier": tier,
-            "period_days": period_days,
-        })
+        return Response(
+            {
+                "ok": True,
+                "tier": tier,
+                "period_days": period_days,
+            }
+        )

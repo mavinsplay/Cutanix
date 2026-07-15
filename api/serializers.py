@@ -14,12 +14,8 @@ __all__ = [
 ]
 
 
-class UserProfileSerializer(
-    serializers.ModelSerializer
-):
-    is_subscription_active = (
-        serializers.BooleanField(read_only=True)
-    )
+class UserProfileSerializer(serializers.ModelSerializer):
+    is_subscription_active = serializers.BooleanField(read_only=True)
     is_admin = serializers.SerializerMethodField()
 
     def get_is_admin(self, obj):
@@ -62,9 +58,7 @@ class AnalysisTaskSerializer(serializers.ModelSerializer):
         )
 
 
-class AnalysisResultSerializer(
-    serializers.ModelSerializer
-):
+class AnalysisResultSerializer(serializers.ModelSerializer):
     class Meta:
         model = AnalysisTask
         fields = (
@@ -93,16 +87,10 @@ class PricingSerializer(serializers.Serializer):
     period_days = serializers.IntegerField()
     price_kopeks = serializers.IntegerField()
     price_rub = serializers.FloatField()
-    features = serializers.ListField(
-        child=serializers.CharField()
-    )
+    features = serializers.ListField(child=serializers.CharField())
     is_featured = serializers.BooleanField()
 
 
 class PaymentCreateSerializer(serializers.Serializer):
-    tier = serializers.ChoiceField(
-        choices=["pro", "ultra"]
-    )
-    period_days = serializers.ChoiceField(
-        choices=[30, 60, 90]
-    )
+    tier = serializers.ChoiceField(choices=["pro", "ultra"])
+    period_days = serializers.ChoiceField(choices=[30, 60, 90])

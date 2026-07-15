@@ -4,8 +4,6 @@ __all__ = []
 
 
 class AnalysisConfig(AppConfig):
-    default_auto_field = (
-        "django.db.models.BigAutoField"
-    )
+    default_auto_field = "django.db.models.BigAutoField"
     name = "analysis"
     verbose_name = "Анализ"
