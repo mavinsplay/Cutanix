@@ -30,15 +30,9 @@ class UserProfileSerializer(serializers.ModelSerializer):
         return None
 
     def get_photo_url(self, obj):
-        from django.conf import settings
         url = obj.photo_url
         if not url:
             return ""
-        if settings.DEBUG:
-            return url
-        for prefix in ("https://t.me/", "http://t.me/"):
-            if url.startswith(prefix):
-                return "/tg-avatars/" + url[len(prefix):]
         return url
 
     def get_admin_url(self, obj):

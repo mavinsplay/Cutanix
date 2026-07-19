@@ -1,10 +1,12 @@
 import hashlib
 import hmac
 import json
+import os
 import time
 import logging
 from urllib.parse import parse_qs
 
+import httpx
 from django.conf import settings
 from rest_framework import (
     authentication,
@@ -16,6 +18,8 @@ from users.models import TelegramUser
 __all__ = ["TelegramAuth"]
 
 logger = logging.getLogger("api")
+
+AVATARS_DIR = os.path.join(settings.MEDIA_ROOT, "avatars")
 
 
 def validate_init_data(init_data, bot_token):
@@ -56,6 +60,23 @@ def validate_init_data(init_data, bot_token):
         return None
 
 
+def download_avatar(telegram_id, photo_url):
+    if not photo_url:
+        return ""
+    os.makedirs(AVATARS_DIR, exist_ok=True)
+    ext = ".jpg"
+    local_path = os.path.join(AVATARS_DIR, f"{telegram_id}{ext}")
+    try:
+        resp = httpx.get(photo_url, timeout=10, follow_redirects=True)
+        resp.raise_for_status()
+        with open(local_path, "wb") as f:
+            f.write(resp.content)
+        return f"/media/avatars/{telegram_id}{ext}"
+    except Exception:
+        logger.warning("Failed to download avatar for %s", telegram_id)
+        return ""
+
+
 class TelegramAuth(authentication.BaseAuthentication):
     keyword = "tma"
 
@@ -82,7 +103,7 @@ class TelegramAuth(authentication.BaseAuthentication):
 
         photo_url = user_data.get("photo_url", "")
 
-        user, _ = TelegramUser.objects.get_or_create(
+        user, created = TelegramUser.objects.get_or_create(
             telegram_id=telegram_id,
             defaults={
                 "username": user_data.get("username", ""),
@@ -95,5 +116,11 @@ class TelegramAuth(authentication.BaseAuthentication):
         if photo_url and user.photo_url != photo_url:
             user.photo_url = photo_url
             user.save(update_fields=["photo_url"])
+
+        if photo_url and (created or not user.photo_url.startswith("/media/")):
+            local = download_avatar(telegram_id, photo_url)
+            if local:
+                user.photo_url = local
+                user.save(update_fields=["photo_url"])
 
         return (user, init_data)
