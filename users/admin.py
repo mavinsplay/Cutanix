@@ -23,6 +23,7 @@ class TelegramUserAdmin(admin.ModelAdmin):
         "first_name",
     )
     readonly_fields = (
+        "photo_url",
         "created_at",
         "updated_at",
     )

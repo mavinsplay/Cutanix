@@ -9,7 +9,12 @@ class TelegramUser(models.Model):
     username = models.CharField(max_length=255, blank=True, default="")
     first_name = models.CharField(max_length=255, blank=True, default="")
     last_name = models.CharField(max_length=255, blank=True, default="")
-    photo_url = models.URLField(max_length=500, blank=True, default="")
+    photo_url = models.CharField(
+        max_length=500,
+        blank=True,
+        default="",
+        verbose_name="Фото",
+    )
     subscription_tier = models.ForeignKey(
         "payments.PricingPlan",
         on_delete=models.SET_NULL,
