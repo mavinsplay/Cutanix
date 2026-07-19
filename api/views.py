@@ -167,6 +167,7 @@ class PaymentCreateView(APIView):
         serializer = PaymentCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         plan_id = serializer.validated_data["plan_id"]
+        months = serializer.validated_data["months"]
 
         try:
             plan = PricingPlan.objects.get(id=plan_id, is_active=True)
@@ -176,17 +177,19 @@ class PaymentCreateView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        amount_kopeks = get_price_kopeks(plan)
+        amount_kopeks = get_price_kopeks(plan, months)
+        period_days = plan.period_days * months
 
         payment = Payment.objects.create(
             user=request.user,
             plan=plan,
             amount_kopeks=amount_kopeks,
+            months=months,
         )
 
         chat_id = request.user.telegram_id
         title = f"Cutanix — {plan.name}"
-        description = f"Подписка {plan.name} на {plan.period_days} дней"
+        description = f"Подписка {plan.name} на {period_days} дней"
         payload = json.dumps({"payment_id": payment.id})
         prices = [{"label": plan.name, "amount": amount_kopeks}]
 
@@ -225,7 +228,9 @@ class PaymentWebhookView(APIView):
 
                 plan = payment_obj.plan
                 if plan:
-                    payment_obj.user.activate_subscription(plan)
+                    payment_obj.user.activate_subscription(
+                        plan, months=payment_obj.months
+                    )
             except Exception as exc:
                 logger.error("Payment error: %s", exc)
 

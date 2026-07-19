@@ -518,25 +518,80 @@
     apiGet('/pricing/').then(plans => {
       if (!plans?.length) { el.innerHTML = `<h1 class="text-2xl font-bold mb-6"><span class="inline-flex items-center">${ICONS.pricing}</span> <span class="text-[#00ff88]">Подписки</span></h1><div class="text-center text-gray-400 py-8 fade-in">Нет доступных тарифов</div>`; return; }
 
-      el.innerHTML = `
-        <h1 class="text-2xl font-bold mb-6"><span class="inline-flex items-center">${ICONS.pricing}</span> <span class="text-[#00ff88]">Подписки</span></h1>
-        <div class="space-y-4">
-          ${plans.map(plan => `
+      const monthsOptions = [
+        { value: 1, label: '1 мес', discount: 0 },
+        { value: 3, label: '3 мес', discount: 0 },
+        { value: 6, label: '6 мес', discount: 10 },
+        { value: 12, label: '12 мес', discount: 20 },
+      ];
+
+      function calcPrice(basePrice, months) {
+        const opt = monthsOptions.find(o => o.value === months);
+        const disc = opt ? opt.discount : 0;
+        const total = basePrice * months;
+        return Math.round(total * (1 - disc / 100));
+      }
+
+      function renderCards() {
+        const cardsEl = el.querySelector('#pricing-cards');
+        if (!cardsEl) return;
+        cardsEl.innerHTML = plans.map(plan => {
+          const total = calcPrice(plan.price_rub, selectedMonths);
+          const perMonth = Math.round(total / selectedMonths);
+          const days = plan.period_days * selectedMonths;
+          const hasActive = user?.subscription_tier === plan.name;
+          return `
             <div class="bg-card p-5 ${plan.is_featured ? 'neon-border neon-glow relative' : ''} ${pulseTier === plan.name ? 'just-activated' : ''}">
               ${plan.is_featured ? '<div class="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#00ff88] text-[#0a0a0f] text-xs font-bold px-3 py-0.5 rounded-full">ЛУЧШИЙ ВЫБОР</div>' : ''}
               <div class="flex items-center justify-between mb-4">
                 <h3 class="text-lg font-semibold">${plan.name}</h3>
-                ${user?.subscription_tier === plan.name ? `<span class="text-xs bg-[#00ff88]/20 text-[#00ff88] px-2 py-0.5 rounded-full ${pulseTier === plan.name ? 'badge-in' : ''}">Текущий</span>` : ''}
+                ${hasActive ? `<span class="text-xs bg-[#00ff88]/20 text-[#00ff88] px-2 py-0.5 rounded-full ${pulseTier === plan.name ? 'badge-in' : ''}">Текущий</span>` : ''}
               </div>
-              <div class="mb-4"><span class="text-3xl font-bold ${plan.is_featured ? 'text-[#00ff88]' : ''}">${plan.price_rub}</span><span class="text-gray-500 text-sm"> ₽ / ${plan.period_days} дн.</span></div>
-              <div class="text-xs text-gray-500 mb-3">Лимит: ${plan.requests_limit} запросов</div>
+              <div class="mb-1">
+                <span class="text-3xl font-bold ${plan.is_featured ? 'text-[#00ff88]' : ''}">${total}</span>
+                <span class="text-gray-500 text-sm"> ₽</span>
+              </div>
+              <div class="text-xs text-gray-500 mb-3">${perMonth} ₽/мес · ${days} дней</div>
+              <div class="text-xs text-gray-500 mb-3">Лимит: ${plan.requests_limit} запросов/мес</div>
               <ul class="space-y-2 mb-5">${(plan.features || []).map(f => `<li class="flex items-start gap-2 text-sm text-gray-300"><span class="text-[#00ff88] mt-0.5">${ICONS.check}</span>${f}</li>`).join('')}</ul>
-              <button class="btn ${user?.subscription_tier === plan.name ? 'btn-secondary opacity-50 cursor-not-allowed' : 'btn-primary'}" ${user?.subscription_tier === plan.name ? 'disabled' : ''} onclick="activatePlan(${plan.id}, this)">${user?.subscription_tier === plan.name ? 'Активен' : 'Выбрать'}</button>
+              <button class="btn ${hasActive ? 'btn-secondary opacity-50 cursor-not-allowed' : 'btn-primary'}" ${hasActive ? 'disabled' : ''} onclick="activatePlan(${plan.id}, this)">${hasActive ? 'Активен' : 'Выбрать'}</button>
             </div>
+          `;
+        }).join('');
+      }
+
+      el.innerHTML = `
+        <h1 class="text-2xl font-bold mb-6"><span class="inline-flex items-center">${ICONS.pricing}</span> <span class="text-[#00ff88]">Подписки</span></h1>
+        <div class="relative flex bg-[#1a1a24] rounded-xl p-1 mb-5">
+          <div id="months-slider" class="floating-pill" style="width: calc(25% - 2px); transform: translateX(0%);"></div>
+          ${monthsOptions.map((o, i) => `
+            <button class="months-btn flex-1 relative z-10 py-2.5 rounded-lg text-xs font-medium transition-colors duration-300 ${o.value === selectedMonths ? 'text-[#0a0a0f]' : 'text-gray-400 hover:text-gray-300'}" data-months="${o.value}">
+              ${o.label}${o.discount ? `<span class="text-[10px] text-[#00ff88] ml-0.5">-${o.discount}%</span>` : ''}
+            </button>
           `).join('')}
         </div>
+        <div id="pricing-cards" class="space-y-4"></div>
       `;
 
+      const slider = el.querySelector('#months-slider');
+      const btns = el.querySelectorAll('.months-btn');
+
+      btns.forEach(b => {
+        b.addEventListener('click', () => {
+          haptic('light');
+          selectedMonths = parseInt(b.dataset.months);
+          btns.forEach(x => {
+            x.classList.toggle('text-[#0a0a0f]', parseInt(x.dataset.months) === selectedMonths);
+            x.classList.toggle('text-gray-400', parseInt(x.dataset.months) !== selectedMonths);
+            x.classList.toggle('hover:text-gray-300', parseInt(x.dataset.months) !== selectedMonths);
+          });
+          const idx = monthsOptions.findIndex(o => o.value === selectedMonths);
+          slider.style.transform = `translateX(${idx * 100}%)`;
+          renderCards();
+        });
+      });
+
+      renderCards();
       refreshPricingCards = () => renderPricing(el);
 
     }).catch(() => {
@@ -544,12 +599,13 @@
     });
   }
 
+  let selectedMonths = 1;
+
   window.activatePlan = async function(planId, btn) {
-    const plan = null;
     btn.disabled = true;
     btn.textContent = 'Оплата...';
     try {
-      const data = await apiPost('/payment/create/', { plan_id: planId });
+      const data = await apiPost('/payment/create/', { plan_id: planId, months: selectedMonths });
       if (data?.invoice) {
         haptic('heavy');
         window.Telegram?.WebApp?.openInvoice(data.invoice.invoice_link, async (status) => {

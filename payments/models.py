@@ -69,6 +69,10 @@ class Payment(models.Model):
         blank=True,
     )
     amount_kopeks = models.PositiveIntegerField()
+    months = models.PositiveIntegerField(
+        default=1,
+        verbose_name="Месяцев",
+    )
     telegram_payment_id = models.CharField(
         max_length=255,
         unique=True,

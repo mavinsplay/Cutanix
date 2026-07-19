@@ -113,3 +113,4 @@ class PricingSerializer(serializers.Serializer):
 
 class PaymentCreateSerializer(serializers.Serializer):
     plan_id = serializers.IntegerField()
+    months = serializers.IntegerField(min_value=1, max_value=12, default=1)

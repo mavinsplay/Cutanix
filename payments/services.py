@@ -4,8 +4,8 @@ import httpx
 __all__ = ["get_price_kopeks", "create_invoice"]
 
 
-def get_price_kopeks(plan):
-    return plan.price_rub * 100
+def get_price_kopeks(plan, months=1):
+    return plan.price_rub * months * 100
 
 
 def create_invoice(

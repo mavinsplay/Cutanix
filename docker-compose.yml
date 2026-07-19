@@ -62,9 +62,6 @@ services:
     depends_on:
       - postgres
       - redis
-    profiles:
-      - dev
-      - prod
     networks:
       - cutanix_net
     logging:
@@ -91,9 +88,6 @@ services:
     depends_on:
       - postgres
       - redis
-    profiles:
-      - dev
-      - prod
     networks:
       - cutanix_net
     logging:
@@ -117,9 +111,6 @@ services:
     depends_on:
       - postgres
       - redis
-    profiles:
-      - dev
-      - prod
     networks:
       - cutanix_net
     logging:
