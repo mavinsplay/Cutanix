@@ -232,7 +232,7 @@
             </svg>
           </div>
           <p class="text-gray-200 text-sm font-medium">Нажмите, чтобы загрузить фото</p>
-          <p class="text-gray-500 text-xs mt-1.5">${user?.subscription_tier === 'free' ? 'Доступно в Pro-версии' : 'JPG, PNG до 10 МБ'}</p>
+          <p class="text-gray-500 text-xs mt-1.5">${user?.subscription_tier ? 'JPG, PNG до 10 МБ' : 'Доступно в платных тарифах'}</p>
         </div>
       </div>
       <textarea id="inci-text" placeholder="Вставьте состав текстом (INCI)..." class="hidden w-full bg-[#1a1a24] border border-[#2a2a35] rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 resize-none focus:outline-none focus:border-[#00ff88]/50 transition-all" rows="5"></textarea>
@@ -334,7 +334,7 @@
     photoZone.addEventListener('click', () => {
       if (analyzing) return;
       haptic('light');
-      if (user?.subscription_tier === 'free') {
+      if (!user?.subscription_tier) {
         showPaywall();
         return;
       }
@@ -515,144 +515,61 @@
 
   function renderPricing(el) {
     el.innerHTML = `<h1 class="text-2xl font-bold mb-6"><span class="inline-flex items-center">${ICONS.pricing}</span> <span class="text-[#00ff88]">Подписки</span></h1>` + spinnerHTML('Загрузка...');
-    apiGet('/pricing/').then(pricing => {
-      if (!pricing?.length) { el.innerHTML = `<h1 class="text-2xl font-bold mb-6"><span class="inline-flex items-center">${ICONS.pricing}</span> <span class="text-[#00ff88]">Подписки</span></h1><div class="text-center text-gray-400 py-8 fade-in">Нет доступных тарифов</div>`; return; }
-      
-      const tiers = [...new Set(pricing.map(p => p.tier))];
-      let currentPeriod = 30;
+    apiGet('/pricing/').then(plans => {
+      if (!plans?.length) { el.innerHTML = `<h1 class="text-2xl font-bold mb-6"><span class="inline-flex items-center">${ICONS.pricing}</span> <span class="text-[#00ff88]">Подписки</span></h1><div class="text-center text-gray-400 py-8 fade-in">Нет доступных тарифов</div>`; return; }
 
       el.innerHTML = `
         <h1 class="text-2xl font-bold mb-6"><span class="inline-flex items-center">${ICONS.pricing}</span> <span class="text-[#00ff88]">Подписки</span></h1>
-        <div class="relative flex bg-[#1a1a24] rounded-xl p-1 mb-6">
-        <div id="pricing-slider" class="floating-pill" style="transform: translateX(0%);"></div>
-          ${[30,60,90].map(d => `<button class="period-btn flex-1 relative z-10 py-2.5 rounded-lg text-sm font-medium transition-colors duration-300 ${d === currentPeriod ? 'text-[#0a0a0f]' : 'text-gray-400 hover:text-gray-300'}" data-period="${d}">${d} дн.</button>`).join('')}
+        <div class="space-y-4">
+          ${plans.map(plan => `
+            <div class="bg-card p-5 ${plan.is_featured ? 'neon-border neon-glow relative' : ''} ${pulseTier === plan.name ? 'just-activated' : ''}">
+              ${plan.is_featured ? '<div class="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#00ff88] text-[#0a0a0f] text-xs font-bold px-3 py-0.5 rounded-full">ЛУЧШИЙ ВЫБОР</div>' : ''}
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-semibold">${plan.name}</h3>
+                ${user?.subscription_tier === plan.name ? `<span class="text-xs bg-[#00ff88]/20 text-[#00ff88] px-2 py-0.5 rounded-full ${pulseTier === plan.name ? 'badge-in' : ''}">Текущий</span>` : ''}
+              </div>
+              <div class="mb-4"><span class="text-3xl font-bold ${plan.is_featured ? 'text-[#00ff88]' : ''}">${plan.price_rub}</span><span class="text-gray-500 text-sm"> ₽ / ${plan.period_days} дн.</span></div>
+              <div class="text-xs text-gray-500 mb-3">Лимит: ${plan.requests_limit} запросов</div>
+              <ul class="space-y-2 mb-5">${(plan.features || []).map(f => `<li class="flex items-start gap-2 text-sm text-gray-300"><span class="text-[#00ff88] mt-0.5">${ICONS.check}</span>${f}</li>`).join('')}</ul>
+              <button class="btn ${user?.subscription_tier === plan.name ? 'btn-secondary opacity-50 cursor-not-allowed' : 'btn-primary'}" ${user?.subscription_tier === plan.name ? 'disabled' : ''} onclick="activatePlan(${plan.id}, this)">${user?.subscription_tier === plan.name ? 'Активен' : 'Выбрать'}</button>
+            </div>
+          `).join('')}
         </div>
-        <div id="pricing-cards" class="space-y-4"></div>
       `;
 
-      const slider = el.querySelector('#pricing-slider');
-      const cardsContainer = el.querySelector('#pricing-cards');
-      const periodBtns = el.querySelectorAll('.period-btn');
-
-      function updateView() {
-        // Update slider position
-        slider.style.transform = `translateX(${currentPeriod === 30 ? '0%' : currentPeriod === 60 ? '100%' : '200%'})`;
-        
-        // Update button text colors
-        periodBtns.forEach(btn => {
-          if (parseInt(btn.dataset.period) === currentPeriod) {
-            btn.classList.remove('text-gray-400', 'hover:text-gray-300');
-            btn.classList.add('text-[#0a0a0f]');
-          } else {
-            btn.classList.add('text-gray-400', 'hover:text-gray-300');
-            btn.classList.remove('text-[#0a0a0f]');
-          }
-        });
-
-        // Render cards
-        function getPrice(tier) { const p = pricing.find(x => x.tier === tier && x.period_days === currentPeriod); return p?.price_rub || 0; }
-        function getFeatures(tier) { const p = pricing.find(x => x.tier === tier && x.period_days === currentPeriod); return p?.features || []; }
-        function getIsFeatured(tier) { const p = pricing.find(x => x.tier === tier && x.period_days === currentPeriod); return p?.is_featured || false; }
-        
-        cardsContainer.innerHTML = tiers.map(tier => `
-          <div class="bg-card p-5 ${getIsFeatured(tier) ? 'neon-border neon-glow relative' : ''} ${pulseTier === tier ? 'just-activated' : ''}">
-            ${getIsFeatured(tier) ? '<div class="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#00ff88] text-[#0a0a0f] text-xs font-bold px-3 py-0.5 rounded-full">ЛУЧШИЙ ВЫБОР</div>' : ''}
-            <div class="flex items-center justify-between mb-4">
-              <h3 class="text-lg font-semibold">${tier === 'pro' ? 'Pro' : 'Ultra'}</h3>
-              ${user?.subscription_tier === tier ? `<span class="text-xs bg-[#00ff88]/20 text-[#00ff88] px-2 py-0.5 rounded-full ${pulseTier === tier ? 'badge-in' : ''}">Текущий</span>` : ''}
-            </div>
-            <div class="mb-4"><span class="text-3xl font-bold ${getIsFeatured(tier) ? 'text-[#00ff88]' : ''}">${getPrice(tier)}</span><span class="text-gray-500 text-sm"> / ${currentPeriod} дн.</span></div>
-            <ul class="space-y-2 mb-5">${getFeatures(tier).map(f => `<li class="flex items-start gap-2 text-sm text-gray-300"><span class="text-[#00ff88] mt-0.5">${ICONS.check}</span>${f}</li>`).join('')}</ul>
-            <button class="btn ${user?.subscription_tier === tier ? 'btn-secondary opacity-50 cursor-not-allowed' : 'btn-primary'}" ${user?.subscription_tier === tier ? 'disabled' : ''} onclick="activateTier('${tier}', ${currentPeriod}, this)">${user?.subscription_tier === tier ? 'Активен' : tier === 'pro' ? 'Выбрать Pro' : 'Активировать Ultra'}</button>
-          </div>
-        `).join('');
-      }
-
-      periodBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-          haptic('light');
-          currentPeriod = parseInt(btn.dataset.period);
-          updateView();
-        });
-      });
-
-      updateView();
-      refreshPricingCards = updateView;
+      refreshPricingCards = () => renderPricing(el);
 
     }).catch(() => {
       el.innerHTML = `<h1 class="text-2xl font-bold mb-6"><span class="inline-flex items-center">${ICONS.pricing}</span> <span class="text-[#00ff88]">Подписки</span></h1><div class="text-center text-red-400 py-8 fade-in">Ошибка загрузки</div>`;
     });
   }
 
-  window.activateTier = async function(tier, period, btn) {
-    if (user && user.subscription_tier !== 'free' && user.subscription_tier !== tier) {
-      haptic('light');
-      showReplaceConfirm(tier, period, btn);
-      return;
-    }
-    haptic('heavy');
-    doActivate(tier, period, btn);
-  };
-
-  function showReplaceConfirm(tier, period, btn) {
-    const labels = { free: 'Free', pro: 'Pro', ultra: 'Ultra' };
-    const currentLabel = labels[user?.subscription_tier] || 'Free';
-    const newLabel = labels[tier] || tier;
-    const overlay = document.createElement('div');
-    overlay.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur px-4';
-    overlay.innerHTML = `
-      <div class="bg-card p-6 max-w-sm w-full border border-[#f59e0b]/40 fade-in">
-        <div class="text-center">
-          <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-[#f59e0b]/10 flex items-center justify-center">
-            <svg class="w-8 h-8 text-[#f59e0b]" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/>
-            </svg>
-          </div>
-          <h3 class="text-lg font-bold mb-2">Заменить тариф?</h3>
-          <p class="text-gray-400 text-sm mb-2">Ваш текущий тариф <span class="text-[#00ff88] font-medium">${currentLabel}</span> будет заменён на <span class="text-[#00ff88] font-medium">${newLabel}</span>.</p>
-          <p class="text-[#f59e0b]/80 text-xs mb-6">Остаток оплаченного периода не переносится, срок действия начнётся заново.</p>
-          <div class="space-y-2.5">
-            <button class="btn text-white font-semibold" id="confirm-replace" style="background:#f59e0b;">Заменить тариф</button>
-            <button class="btn btn-secondary" id="cancel-replace">Отмена</button>
-          </div>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(overlay);
-    const close = () => overlay.remove();
-    overlay.querySelector('#confirm-replace').addEventListener('click', () => {
-      haptic('heavy');
-      close();
-      doActivate(tier, period, btn);
-    });
-    overlay.querySelector('#cancel-replace').addEventListener('click', () => {
-      haptic('light');
-      close();
-    });
-  }
-
-  async function doActivate(tier, period, btn) {
+  window.activatePlan = async function(planId, btn) {
+    const plan = null;
     btn.disabled = true;
-    btn.textContent = 'Активация...';
+    btn.textContent = 'Оплата...';
     try {
-      const data = await apiPost('/payment/activate/', { tier, period_days: period });
-      if (data?.ok) {
-        btn.textContent = 'Активирован';
-        btn.className = 'btn btn-success';
-        hapticOk();
-        await loadProfile();
-        setTimeout(() => {
-          pulseTier = tier;
-          if (refreshPricingCards) refreshPricingCards();
-          if (refreshProfileView) refreshProfileView();
-          setTimeout(() => { pulseTier = null; }, 800);
-        }, 700);
+      const data = await apiPost('/payment/create/', { plan_id: planId });
+      if (data?.invoice) {
+        haptic('heavy');
+        window.Telegram?.WebApp?.openInvoice(data.invoice.invoice_link, async (status) => {
+          if (status === 'paid' || status === 'cancelled') {
+            await loadProfile();
+            if (refreshPricingCards) refreshPricingCards();
+            if (refreshProfileView) refreshProfileView();
+          }
+          btn.disabled = false;
+          btn.textContent = 'Выбрать';
+        });
+      } else {
+        btn.textContent = 'Ошибка';
+        btn.disabled = false;
       }
     } catch(e) {
       btn.textContent = 'Ошибка';
       btn.disabled = false;
     }
-  }
+  };
 
   window.switchTab = function(tab) {
     switchTab(tab);
@@ -665,10 +582,9 @@
   function renderProfile(el) {
     if (!user) { el.innerHTML = '<div class="text-center text-gray-500 py-8">Загрузка...</div>'; return; }
     const progress = user.requests_limit > 0 ? (user.requests_used / user.requests_limit) * 100 : 0;
-    const tierColors = { free: 'text-gray-400', pro: 'text-blue-400', ultra: 'text-[#00ff88]' };
-    const tierLabels = { free: 'Free', pro: 'Pro', ultra: 'Ultra' };
-    const tierBg = { free: 'bg-gray-500/10', pro: 'bg-blue-500/10', ultra: 'bg-[#00ff88]/10' };
-    const tierColor = tierColors[user.subscription_tier] || tierColors.free;
+    const hasTier = !!user.subscription_tier;
+    const tierColor = hasTier ? 'text-[#00ff88]' : 'text-gray-400';
+    const tierBg = hasTier ? 'bg-[#00ff88]/10' : 'bg-gray-500/10';
     const progressColor = progress > 80 ? '#ef4444' : progress > 50 ? '#f59e0b' : '#00ff88';
 
     el.innerHTML = `
@@ -687,9 +603,9 @@
         <div class="bg-card-inner p-4 mb-3">
           <div class="flex items-center justify-between mb-3">
             <span class="text-gray-400 text-sm">Тариф</span>
-            <span class="font-bold px-3 py-1 rounded-full text-sm ${tierColor} ${tierBg[user.subscription_tier] || tierBg.free}">${tierLabels[user.subscription_tier] || 'Free'}</span>
+            <span class="font-bold px-3 py-1 rounded-full text-sm ${tierColor} ${tierBg}">${user.subscription_tier || 'Free'}</span>
           </div>
-          ${user.subscription_expires && user.subscription_tier !== 'free' ? `<div class="flex items-center justify-between mb-3"><span class="text-gray-400 text-sm">Действует до</span><span class="text-sm">${new Date(user.subscription_expires).toLocaleDateString('ru-RU')}</span></div>` : ''}
+          ${user.subscription_expires && user.subscription_tier ? `<div class="flex items-center justify-between mb-3"><span class="text-gray-400 text-sm">Действует до</span><span class="text-sm">${new Date(user.subscription_expires).toLocaleDateString('ru-RU')}</span></div>` : ''}
           <div>
             <div class="flex items-center justify-between text-xs text-gray-400 mb-1">
               <span>Запросов</span>

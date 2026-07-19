@@ -9,22 +9,26 @@ __all__ = []
 @admin.register(PricingPlan)
 class PricingPlanAdmin(admin.ModelAdmin):
     list_display = (
-        "tier",
-        "price_rub_display",
+        "name",
+        "price_display",
+        "period_days",
+        "requests_limit",
         "is_featured_display",
         "is_active",
     )
     list_editable = ("is_active",)
-    list_filter = ("tier", "is_active", "is_featured")
-    ordering = ("base_price_kopeks",)
+    list_filter = ("is_active", "is_featured")
+    ordering = ("price_rub",)
 
     fieldsets = (
         (
             None,
             {
                 "fields": (
-                    "tier",
-                    "base_price_kopeks",
+                    "name",
+                    "price_rub",
+                    "period_days",
+                    "requests_limit",
                     "is_active",
                 ),
             },
@@ -44,10 +48,10 @@ class PricingPlanAdmin(admin.ModelAdmin):
         ),
     )
 
-    def price_rub_display(self, obj):
-        return f"{obj.price_rub:.0f} ₽"
+    def price_display(self, obj):
+        return f"{obj.price_rub} ₽"
 
-    price_rub_display.short_description = "Цена"
+    price_display.short_description = "Цена"
 
     def is_featured_display(self, obj):
         if obj.is_featured:
@@ -64,11 +68,15 @@ class PaymentAdmin(admin.ModelAdmin):
     list_display = (
         "telegram_payment_id",
         "user",
-        "tier",
-        "period_days",
-        "amount_kopeks",
+        "plan",
+        "amount_display",
         "status",
         "created_at",
     )
-    list_filter = ("status", "tier")
+    list_filter = ("status",)
     readonly_fields = ("created_at",)
+
+    def amount_display(self, obj):
+        return f"{obj.amount_rub} ₽"
+
+    amount_display.short_description = "Сумма"

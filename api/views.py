@@ -22,7 +22,7 @@ from payments.services import (
     create_invoice,
     get_price_kopeks,
 )
-from api.serializers import (  # noqa: ABS101
+from api.serializers import (
     AnalysisResultSerializer,
     AnalysisTaskSerializer,
     HistorySerializer,
@@ -53,8 +53,8 @@ class AnalysisCreateView(APIView):
         user = request.user
         if not user.can_make_request():
             return Response(
-                {"error": ("Лимит запросов исчерпан")},
-                status=(status.HTTP_403_FORBIDDEN),
+                {"error": "Лимит запросов исчерпан"},
+                status=status.HTTP_403_FORBIDDEN,
             )
 
         text = request.data.get("text", "").strip()
@@ -62,20 +62,19 @@ class AnalysisCreateView(APIView):
 
         if not text and not image:
             return Response(
-                {"error": ("Требуется текст или фото")},
-                status=(status.HTTP_400_BAD_REQUEST),
+                {"error": "Требуется текст или фото"},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         if len(text) > MAX_INCI_LENGTH:
             return Response(
                 {
                     "error": (
-                        "Слишком длинный состав "
-                        f"(макс. {MAX_INCI_LENGTH} "
-                        "символов)"
+                        f"Слишком длинный состав "
+                        f"(макс. {MAX_INCI_LENGTH} символов)"
                     )
                 },
-                status=(status.HTTP_400_BAD_REQUEST),
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         if text:
@@ -83,25 +82,23 @@ class AnalysisCreateView(APIView):
                 text = sanitize_inci_input(text, strict=True)
             except PromptInjectionError:
                 logger.warning(
-                    "Prompt injection blocked " "for user %s",
+                    "Prompt injection blocked for user %s",
                     getattr(user, "telegram_id", "?"),
                 )
                 return Response(
                     {
                         "error": (
                             "Недопустимый ввод: "
-                            "текст должен содержать "
-                            "только состав (INCI)"
+                            "текст должен содержать только состав (INCI)"
                         )
                     },
-                    status=(status.HTTP_400_BAD_REQUEST),
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
 
-        tier = user.subscription_tier
-        if tier == "free" and image:
+        if user.subscription_tier == "free" and image:
             return Response(
-                {"error": ("Фото доступно в Pro")},
-                status=(status.HTTP_403_FORBIDDEN),
+                {"error": "Фото доступно в платных тарифах"},
+                status=status.HTTP_403_FORBIDDEN,
             )
 
         task = AnalysisTask.objects.create(
@@ -121,7 +118,7 @@ class AnalysisCreateView(APIView):
 
         return Response(
             AnalysisTaskSerializer(task).data,
-            status=(status.HTTP_201_CREATED),
+            status=status.HTTP_201_CREATED,
         )
 
 
@@ -138,7 +135,7 @@ class HistoryView(generics.ListAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        if user.subscription_tier == "free":
+        if not user.subscription_tier:
             return AnalysisTask.objects.none()
         return AnalysisTask.objects.filter(user=user)
 
@@ -148,75 +145,61 @@ class PricingView(APIView):
 
     def get(self, request):
         plans = PricingPlan.objects.filter(is_active=True).order_by(
-            "-is_featured", "base_price_kopeks"
+            "-is_featured", "price_rub"
         )
-        pricing = []
-        for plan in plans:
-            base = plan.base_price_kopeks
-            for days, multiplier in [(30, 1.0), (60, 1.98), (90, 2.85)]:
-                price_kop = int(base * multiplier)
-                pricing.append(
-                    {
-                        "tier": plan.tier,
-                        "period_days": days,
-                        "price_kopeks": price_kop,
-                        "price_rub": int(price_kop / 100),
-                        "features": plan.features,
-                        "is_featured": plan.is_featured,
-                    }
-                )
-        serializer = PricingSerializer(pricing, many=True)
-        return Response(serializer.data)
+        data = [
+            {
+                "id": plan.id,
+                "name": plan.name,
+                "price_rub": plan.price_rub,
+                "period_days": plan.period_days,
+                "requests_limit": plan.requests_limit,
+                "features": plan.features,
+                "is_featured": plan.is_featured,
+            }
+            for plan in plans
+        ]
+        return Response(data)
 
 
 class PaymentCreateView(APIView):
     def post(self, request):
         serializer = PaymentCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
+        plan_id = serializer.validated_data["plan_id"]
 
-        tier = data["tier"]
-        period_days = data["period_days"]
-        amount = get_price_kopeks(tier, period_days)
+        try:
+            plan = PricingPlan.objects.get(id=plan_id, is_active=True)
+        except PricingPlan.DoesNotExist:
+            return Response(
+                {"error": "Тариф не найден"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        amount_kopeks = get_price_kopeks(plan)
 
         payment = Payment.objects.create(
             user=request.user,
-            tier=tier,
-            period_days=period_days,
-            amount_kopeks=amount,
+            plan=plan,
+            amount_kopeks=amount_kopeks,
         )
 
         chat_id = request.user.telegram_id
-        title = f"Cutanix {tier.upper()}"
-        description = f"Подписка {tier.upper()} " f"на {period_days} дней"
-        payload = json.dumps(
-            {
-                "payment_id": payment.id,
-                "tier": tier,
-                "period_days": period_days,
-            }
-        )
-        prices = [
-            {
-                "label": (f"Cutanix {tier.upper()}"),
-                "amount": amount,
-            }
-        ]
+        title = f"Cutanix — {plan.name}"
+        description = f"Подписка {plan.name} на {plan.period_days} дней"
+        payload = json.dumps({"payment_id": payment.id})
+        prices = [{"label": plan.name, "amount": amount_kopeks}]
 
         result = create_invoice(
-            chat_id,
-            title,
-            description,
-            payload,
-            prices,
+            chat_id, title, description, payload, prices
         )
 
         if result and result.get("ok"):
-            return Response({"invoice": (result["result"])})
+            return Response({"invoice": result["result"]})
 
         return Response(
-            {"error": ("Не удалось создать счёт")},
-            status=(status.HTTP_500_INTERNAL_SERVER_ERROR),
+            {"error": "Не удалось создать счёт"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
 
@@ -240,14 +223,10 @@ class PaymentWebhookView(APIView):
                 payment_obj.status = "succeeded"
                 payment_obj.save()
 
-                payment_obj.user.activate_subscription(  # noqa: E501
-                    payload["tier"],
-                    payload["period_days"],
-                )
+                plan = payment_obj.plan
+                if plan:
+                    payment_obj.user.activate_subscription(plan)
             except Exception as exc:
-                logger.error(
-                    "Payment error: %s",
-                    exc,
-                )
+                logger.error("Payment error: %s", exc)
 
         return Response({"ok": True})

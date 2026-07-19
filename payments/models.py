@@ -6,24 +6,28 @@ __all__ = ["Payment", "PricingPlan"]
 
 
 class PricingPlan(models.Model):
-    TIER_CHOICES = [
-        ("pro", "Pro"),
-        ("ultra", "Ultra"),
-    ]
-
-    tier = models.CharField(
-        max_length=10,
-        choices=TIER_CHOICES,
+    name = models.CharField(
+        max_length=50,
         unique=True,
-        verbose_name="Тариф",
+        default="",
+        verbose_name="Название тарифа",
     )
-    base_price_kopeks = models.PositiveIntegerField(
-        verbose_name="Базовая цена за 30 дней (копейки)",
+    price_rub = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Цена (₽)",
+    )
+    period_days = models.PositiveIntegerField(
+        default=30,
+        verbose_name="Дней",
+    )
+    requests_limit = models.PositiveIntegerField(
+        default=50,
+        verbose_name="Лимит запросов",
     )
     features = models.JSONField(
         default=list,
         blank=True,
-        verbose_name="Возможности (список строк)",
+        verbose_name="Возможности",
     )
     is_featured = models.BooleanField(
         default=False,
@@ -37,19 +41,11 @@ class PricingPlan(models.Model):
     class Meta:
         verbose_name = "Тарифный план"
         verbose_name_plural = "Тарифные планы"
-        ordering = ["base_price_kopeks"]
+        ordering = ["price_rub"]
 
     def __str__(self):
         featured = " ⭐" if self.is_featured else ""
-        return (
-            f"{self.get_tier_display()} — "
-            f"{self.base_price_kopeks / 100:.0f} ₽ / 30 дн."
-            f"{featured}"
-        )
-
-    @property
-    def price_rub(self):
-        return self.base_price_kopeks / 100
+        return f"{self.name} — {self.price_rub} ₽ / {self.period_days} дн.{featured}"
 
 
 class Payment(models.Model):
@@ -59,18 +55,19 @@ class Payment(models.Model):
         ("failed", "Ошибка"),
         ("cancelled", "Отменён"),
     ]
-    TIER_CHOICES = [
-        ("pro", "Pro"),
-        ("ultra", "Ultra"),
-    ]
 
     user = models.ForeignKey(
         TelegramUser,
         on_delete=models.CASCADE,
         related_name="payments",
     )
-    tier = models.CharField(max_length=10, choices=TIER_CHOICES)
-    period_days = models.PositiveIntegerField()
+    plan = models.ForeignKey(
+        PricingPlan,
+        on_delete=models.PROTECT,
+        related_name="payments",
+        null=True,
+        blank=True,
+    )
     amount_kopeks = models.PositiveIntegerField()
     telegram_payment_id = models.CharField(
         max_length=255,
@@ -91,8 +88,8 @@ class Payment(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"Payment {self.telegram_payment_id} " f"[{self.status}]"
+        return f"Payment {self.telegram_payment_id} [{self.status}]"
 
     @property
     def amount_rub(self):
-        return self.amount_kopeks / 100
+        return self.amount_kopeks // 100

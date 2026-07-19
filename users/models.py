@@ -5,21 +5,16 @@ __all__ = ["TelegramUser"]
 
 
 class TelegramUser(models.Model):
-    TIER_CHOICES = [
-        ("free", "Free"),
-        ("pro", "Pro"),
-        ("ultra", "Ultra"),
-    ]
-
     telegram_id = models.BigIntegerField(unique=True, db_index=True)
     username = models.CharField(max_length=255, blank=True, default="")
     first_name = models.CharField(max_length=255, blank=True, default="")
     last_name = models.CharField(max_length=255, blank=True, default="")
     photo_url = models.URLField(max_length=500, blank=True, default="")
     subscription_tier = models.CharField(
-        max_length=10,
-        choices=TIER_CHOICES,
-        default="free",
+        max_length=50,
+        blank=True,
+        default="",
+        verbose_name="Тариф",
     )
     subscription_expires = models.DateTimeField(null=True, blank=True)
     requests_used = models.PositiveIntegerField(default=0)
@@ -41,11 +36,12 @@ class TelegramUser(models.Model):
 
     def __str__(self):
         name = self.username or self.first_name
-        return f"{name} ({self.telegram_id}) " f"[{self.subscription_tier}]"
+        tier = self.subscription_tier or "free"
+        return f"{name} ({self.telegram_id}) [{tier}]"
 
     @property
     def is_subscription_active(self):
-        if self.subscription_tier == "free":
+        if not self.subscription_tier:
             return True
         if self.subscription_expires is None:
             return False
@@ -74,15 +70,11 @@ class TelegramUser(models.Model):
             ]
         )
 
-    def activate_subscription(self, tier, period_days):
-        self.subscription_tier = tier
-        limits = {
-            "pro": 50,
-            "ultra": 200,
-        }
-        self.requests_limit = limits.get(tier, 3)
+    def activate_subscription(self, plan):
+        self.subscription_tier = plan.name
+        self.requests_limit = plan.requests_limit
         self.requests_used = 0
         self.subscription_expires = timezone.now() + timezone.timedelta(
-            days=period_days
+            days=plan.period_days
         )
         self.save()

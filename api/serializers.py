@@ -1,4 +1,3 @@
-from django.conf import settings
 from rest_framework import serializers
 
 from analysis.models import AnalysisTask
@@ -21,9 +20,11 @@ class UserProfileSerializer(serializers.ModelSerializer):
     admin_url = serializers.SerializerMethodField()
 
     def get_is_admin(self, obj):
+        from django.conf import settings
         return obj.telegram_id in settings.ADMIN_TELEGRAM_IDS
 
     def get_photo_url(self, obj):
+        from django.conf import settings
         url = obj.photo_url
         if not url:
             return ""
@@ -36,7 +37,6 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
     def get_admin_url(self, obj):
         from django.urls import reverse
-
         return reverse("admin:index")
 
     class Meta:
@@ -102,14 +102,14 @@ class HistorySerializer(serializers.ModelSerializer):
 
 
 class PricingSerializer(serializers.Serializer):
-    tier = serializers.CharField()
+    id = serializers.IntegerField()
+    name = serializers.CharField()
+    price_rub = serializers.IntegerField()
     period_days = serializers.IntegerField()
-    price_kopeks = serializers.IntegerField()
-    price_rub = serializers.FloatField()
+    requests_limit = serializers.IntegerField()
     features = serializers.ListField(child=serializers.CharField())
     is_featured = serializers.BooleanField()
 
 
 class PaymentCreateSerializer(serializers.Serializer):
-    tier = serializers.ChoiceField(choices=["pro", "ultra"])
-    period_days = serializers.ChoiceField(choices=[30, 60, 90])
+    plan_id = serializers.IntegerField()
