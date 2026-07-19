@@ -251,38 +251,3 @@ class PaymentWebhookView(APIView):
                 )
 
         return Response({"ok": True})
-
-
-class PaymentActivateView(APIView):
-    def post(self, request):
-        serializer = PaymentCreateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-
-        tier = data["tier"]
-        period_days = data["period_days"]
-
-        Payment.objects.update_or_create(
-            user=request.user,
-            tier=tier,
-            period_days=period_days,
-            defaults={
-                "amount_kopeks": 0,
-                "telegram_payment_id": (
-                    f"mock_{tier}_"
-                    f"{period_days}_"
-                    f"{request.user.telegram_id}"
-                ),
-                "status": "succeeded",
-            },
-        )
-
-        request.user.activate_subscription(tier, period_days)
-
-        return Response(
-            {
-                "ok": True,
-                "tier": tier,
-                "period_days": period_days,
-            }
-        )

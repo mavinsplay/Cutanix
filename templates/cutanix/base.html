@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="description" content="Cutanix — проверьте безопасность косметики по составу (INCI) или фото этикетки" />
   <title>Cutanix</title>
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="/tg-js/telegram-web-app.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   {% load static %}
   <link rel="stylesheet" href="{% static 'cutanix/css/style.css' %}">
@@ -19,6 +19,23 @@
       <div class="text-[#00ff88] text-lg mt-3 font-sans">Cutanix</div>
     </div>
   </div>
+
+  <script>
+    (function() {
+      var tg = window.Telegram && window.Telegram.WebApp;
+      if (!tg || !tg.initData) {
+        document.getElementById('loading').innerHTML =
+          '<div class="flex flex-col items-center justify-center min-h-screen px-6 text-center">' +
+            '<svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#ff4444" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' +
+              '<path d="M12 9v4m0 4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/>' +
+            '</svg>' +
+            '<div class="text-white text-xl font-semibold mt-4">Доступ запрещён</div>' +
+            '<div class="text-gray-400 text-sm mt-2 max-w-xs">Откройте приложение через Telegram Mini App</div>' +
+          '</div>';
+        window.__CUTANIX_BLOCKED = true;
+      }
+    })();
+  </script>
 
   <script src="{% static 'cutanix/js/app.js' %}"></script>
 </body>

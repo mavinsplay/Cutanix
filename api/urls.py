@@ -42,9 +42,4 @@ urlpatterns = [
         views.PaymentWebhookView.as_view(),
         name="payment-webhook",
     ),
-    path(
-        "payment/activate/",
-        views.PaymentActivateView.as_view(),
-        name="payment-activate",
-    ),
 ]

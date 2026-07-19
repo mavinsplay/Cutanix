@@ -17,9 +17,19 @@ __all__ = [
 class UserProfileSerializer(serializers.ModelSerializer):
     is_subscription_active = serializers.BooleanField(read_only=True)
     is_admin = serializers.SerializerMethodField()
+    photo_url = serializers.SerializerMethodField()
 
     def get_is_admin(self, obj):
         return obj.telegram_id in settings.ADMIN_TELEGRAM_IDS
+
+    def get_photo_url(self, obj):
+        url = obj.photo_url
+        if not url:
+            return ""
+        for prefix in ("https://t.me/", "http://t.me/"):
+            if url.startswith(prefix):
+                return "/tg-avatars/" + url[len(prefix) :]
+        return url
 
     class Meta:
         model = TelegramUser

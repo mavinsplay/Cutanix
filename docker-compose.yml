@@ -1,13 +1,10 @@
-x-logging: &default-logging
-  driver: "json-file"
-  options:
-    max-size: "50m"
-    max-file: "5"
+name: "cutanix"
 
 services:
   postgres:
     image: postgres:17
     container_name: cutanix_postgres
+    env_file: .env
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -15,217 +12,126 @@ services:
     volumes:
       - ./for_docker/postgres_data:/var/lib/postgresql/data
     restart: always
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    networks: [cutanix_net]
-    logging: *default-logging
-    profiles: ["dev", "prod"]
+    networks:
+      - cutanix_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
 
   redis:
     image: redis:7-alpine
     container_name: cutanix_redis
+    env_file: .env
     environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-cutanix_redis_pass}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
     command:
       - "redis-server"
       - "--requirepass"
-      - "${REDIS_PASSWORD:-cutanix_redis_pass}"
+      - "${REDIS_PASSWORD}"
       - "--save"
       - "60"
       - "1"
     volumes:
       - ./for_docker/redis_data:/data
     restart: always
-    healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD:-cutanix_redis_pass}\" ping | grep -q PONG"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 5s
-    networks: [cutanix_net]
-    logging: *default-logging
-    profiles: ["dev", "prod"]
-
-  celery:
-    build:
-      context: .
-      args:
-        REQUIREMENTS: dev.txt
-    image: cutanix_celery:latest
-    container_name: cutanix_celery
-    env_file: .env
-    command: celery -A cutanix worker --loglevel=INFO --logfile=/logs/celery.log
-    environment:
-      DJANGO_SELECTED_DB: postgresql
-      DJANGO_USE_REDIS: "true"
-      CELERY_ALWAYS_EAGER: "false"
-      POSTGRES_HOST: postgres
-      REDIS_HOST: redis
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-cutanix_redis_pass}
-    volumes:
-      - ./media:/media
-      - ./logs/celery:/logs
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    restart: always
-    networks: [cutanix_net]
-    logging: *default-logging
-    profiles: ["dev"]
-
-  celery_prod:
-    build:
-      context: .
-      args:
-        REQUIREMENTS: prod.txt
-    image: cutanix_celery:latest
-    container_name: cutanix_celery
-    env_file: .env
-    command: celery -A cutanix worker --loglevel=INFO --logfile=/logs/celery.log
-    environment:
-      DJANGO_SELECTED_DB: postgresql
-      DJANGO_USE_REDIS: "true"
-      CELERY_ALWAYS_EAGER: "false"
-      POSTGRES_HOST: postgres
-      REDIS_HOST: redis
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-cutanix_redis_pass}
-    volumes:
-      - ./media:/media
-      - ./logs/celery:/logs
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    restart: always
-    networks: [cutanix_net]
-    logging: *default-logging
-    profiles: ["prod"]
-
-  bot:
-    build:
-      context: .
-      args:
-        REQUIREMENTS: dev.txt
-    image: cutanix_bot:latest
-    container_name: cutanix_bot
-    env_file: .env
-    command: python manage.py runbot
-    environment:
-      DJANGO_SELECTED_DB: postgresql
-      POSTGRES_HOST: postgres
-      REDIS_HOST: redis
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-cutanix_redis_pass}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    restart: always
-    networks: [cutanix_net]
-    logging: *default-logging
-    profiles: ["dev"]
-
-  bot_prod:
-    build:
-      context: .
-      args:
-        REQUIREMENTS: prod.txt
-    image: cutanix_bot:latest
-    container_name: cutanix_bot
-    env_file: .env
-    command: python manage.py runbot
-    environment:
-      DJANGO_SELECTED_DB: postgresql
-      POSTGRES_HOST: postgres
-      REDIS_HOST: redis
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-cutanix_redis_pass}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    restart: always
-    networks: [cutanix_net]
-    logging: *default-logging
-    profiles: ["prod"]
+    networks:
+      - cutanix_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
 
   django:
     build:
       context: .
       args:
-        REQUIREMENTS: dev.txt
-    image: cutanix_app:latest
+        REQUIREMENTS: ${REQUIREMENTS:-dev.txt}
     container_name: cutanix_django
     env_file: .env
     environment:
-      DJANGO_DEBUG: "true"
-      DJANGO_SELECTED_DB: postgresql
-      DJANGO_USE_REDIS: "true"
-      CELERY_ALWAYS_EAGER: "false"
       POSTGRES_HOST: postgres
       REDIS_HOST: redis
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-cutanix_redis_pass}
-      DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1"
-      DJANGO_CSRF_TRUSTED_ORIGINS: "http://localhost,http://127.0.0.1"
-      DJANGO_SITE_URL: "http://localhost:8000"
+    restart: always
     volumes:
       - ./static:/static
       - ./media:/media
       - ./logs/django:/logs
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    restart: always
-    networks: [cutanix_net]
-    logging: *default-logging
-    profiles: ["dev"]
+      - postgres
+      - redis
+    profiles:
+      - dev
+      - prod
+    networks:
+      - cutanix_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
 
-  django_prod:
+  celery:
     build:
       context: .
       args:
-        REQUIREMENTS: prod.txt
-    image: cutanix_app:latest
-    container_name: cutanix_django
+        REQUIREMENTS: ${REQUIREMENTS:-dev.txt}
+    container_name: cutanix_celery
     env_file: .env
+    command: celery -A cutanix worker --loglevel=INFO --logfile=/logs/celery.log
     environment:
-      DJANGO_DEBUG: "false"
-      DJANGO_SELECTED_DB: postgresql
-      DJANGO_USE_REDIS: "true"
-      CELERY_ALWAYS_EAGER: "false"
       POSTGRES_HOST: postgres
       REDIS_HOST: redis
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-cutanix_redis_pass}
-      DJANGO_ALLOWED_HOSTS: "${DJANGO_ALLOWED_HOSTS:-yourdomain.com,www.yourdomain.com}"
-      DJANGO_CSRF_TRUSTED_ORIGINS: "${DJANGO_CSRF_TRUSTED_ORIGINS:-https://yourdomain.com}"
-      DJANGO_SITE_URL: "${DJANGO_SITE_URL:-https://yourdomain.com}"
-    volumes:
-      - ./static:/static
-      - ./media:/media
-      - ./logs/django:/logs
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
     restart: always
-    networks: [cutanix_net]
-    logging: *default-logging
-    profiles: ["prod"]
+    volumes:
+      - ./media:/media
+      - ./logs/celery:/logs
+    depends_on:
+      - postgres
+      - redis
+    profiles:
+      - dev
+      - prod
+    networks:
+      - cutanix_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
 
-  # ---------- Nginx (dev) ----------
-  nginx:
+  bot:
+    build:
+      context: .
+      args:
+        REQUIREMENTS: ${REQUIREMENTS:-dev.txt}
+    container_name: cutanix_bot
+    env_file: .env
+    command: python manage.py runbot
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+    restart: always
+    depends_on:
+      - postgres
+      - redis
+    profiles:
+      - dev
+      - prod
+    networks:
+      - cutanix_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  nginx-dev:
     image: nginx:1.27-alpine
-    container_name: cutanix_nginx
+    container_name: cutanix_nginx_dev
+    profiles: ["dev"]
     ports:
       - "8000:8000"
     volumes:
@@ -236,16 +142,17 @@ services:
     depends_on:
       - django
     restart: always
-    networks: [cutanix_net]
-    logging: *default-logging
-    profiles: ["dev"]
+    networks:
+      - cutanix_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
 
-  # ---------- Nginx (prod) + авто-сертификаты certbot ----------
-  # Домен берётся из CUTANIX_DOMAIN в .env; конфиг рендерится из шаблона
-  # envsubst'ом при старте (см. for_docker/nginx-entrypoint.sh).
-  nginx_prod:
+  nginx-prod:
     image: jonasal/nginx-certbot:latest
-    container_name: cutanix_nginx
+    container_name: cutanix_nginx_prod
     profiles: ["prod"]
     env_file: .env
     environment:
@@ -267,10 +174,15 @@ services:
       - ./for_docker/nginx_certificates:/etc/letsencrypt
     entrypoint: ["sh", "/docker-entrypoint-wrapper.sh"]
     depends_on:
-      - django_prod
+      - django
     restart: always
-    networks: [cutanix_net]
-    logging: *default-logging
+    networks:
+      - cutanix_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
 
 networks:
   cutanix_net:

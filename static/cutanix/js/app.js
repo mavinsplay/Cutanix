@@ -23,10 +23,6 @@
     const d = getInitData();
     const headers = {};
     if (d) headers['X-Telegram-Init-Data'] = d;
-    try {
-      const u = window.Telegram?.WebApp?.initDataUnsafe?.user;
-      if (u) headers['X-Telegram-User'] = JSON.stringify(u);
-    } catch(e) {}
     return headers;
   }
 
@@ -755,7 +751,10 @@
   }
 
   async function init() {
-    try { window.Telegram?.WebApp?.ready?.(); window.Telegram?.WebApp?.expand?.(); } catch(e) {}
+    if (window.__CUTANIX_BLOCKED) return;
+    var tg = window.Telegram && window.Telegram.WebApp;
+    if (!tg || !tg.initData) return;
+    try { tg.ready(); tg.expand(); } catch(e) {}
     await loadProfile();
     hideLoading();
     currentTab = 'scan';

@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import json
 import time
+import logging
 from urllib.parse import parse_qs
 
 from django.conf import settings
@@ -13,6 +14,8 @@ from rest_framework import (
 from users.models import TelegramUser
 
 __all__ = ["TelegramAuth"]
+
+logger = logging.getLogger("api")
 
 
 def validate_init_data(init_data, bot_token):
@@ -36,7 +39,7 @@ def validate_init_data(init_data, bot_token):
         hashlib.sha256,
     ).hexdigest()
 
-    if computed_hash != received_hash:
+    if not hmac.compare_digest(computed_hash, received_hash):
         return None
 
     auth_date = int(parsed.get("auth_date", [0])[0])
@@ -53,89 +56,22 @@ def validate_init_data(init_data, bot_token):
         return None
 
 
-import logging
-
-logger = logging.getLogger("api")
-
-
 class TelegramAuth(authentication.BaseAuthentication):
     keyword = "tma"
 
     def authenticate(self, request):
         init_data = request.headers.get("X-Telegram-Init-Data", "")
-        tg_user_header = request.headers.get("X-Telegram-User", "")
-
-        logger.warning(
-            "AUTH: init_data=%s",
-            init_data[:50] if init_data else "EMPTY",
-        )
 
         if not init_data:
-            if settings.DEBUG:
-                defaults = {
-                    "username": "debug_user",
-                    "first_name": "Debug",
-                    "last_name": "User",
-                    "photo_url": "",
-                }
-                telegram_id = 999999999
-                if tg_user_header:
-                    try:
-                        tg_user = json.loads(tg_user_header)
-                        telegram_id = tg_user.get("id", telegram_id)
-                        defaults["username"] = tg_user.get("username", "")
-                        defaults["first_name"] = tg_user.get("first_name", "")
-                        defaults["last_name"] = tg_user.get("last_name", "")
-                        defaults["photo_url"] = tg_user.get("photo_url", "")
-                    except (json.JSONDecodeError, TypeError):
-                        pass
-                user, created = TelegramUser.objects.get_or_create(
-                    telegram_id=telegram_id,
-                    defaults=defaults,
-                )
-                if not created and tg_user_header:
-                    update_fields = []
-                    try:
-                        tg_user = json.loads(tg_user_header)
-                        if (
-                            tg_user.get("photo_url")
-                            and user.photo_url != tg_user["photo_url"]
-                        ):
-                            user.photo_url = tg_user["photo_url"]
-                            update_fields.append("photo_url")
-                        if (
-                            tg_user.get("first_name")
-                            and user.first_name != tg_user["first_name"]
-                        ):
-                            user.first_name = tg_user["first_name"]
-                            update_fields.append("first_name")
-                        if update_fields:
-                            user.save(update_fields=update_fields)
-                    except (json.JSONDecodeError, TypeError):
-                        pass
-                return (user, "debug")
-            return None
+            raise exceptions.AuthenticationFailed(
+                "Telegram init data required"
+            )
 
         bot_token = settings.TELEGRAM_BOT_TOKEN
         if not bot_token:
-            if settings.DEBUG:
-                user, _ = TelegramUser.objects.get_or_create(
-                    telegram_id=999999999,
-                    defaults={
-                        "username": "debug_user",
-                        "first_name": "Debug",
-                        "last_name": "User",
-                    },
-                )
-                return (user, "debug")
             raise exceptions.AuthenticationFailed("Bot token not configured")
 
         user_data = validate_init_data(init_data, bot_token)
-
-        logger.warning(
-            "AUTH: user_data=%s",
-            user_data,
-        )
 
         if not user_data:
             raise exceptions.AuthenticationFailed("Invalid Telegram init data")
