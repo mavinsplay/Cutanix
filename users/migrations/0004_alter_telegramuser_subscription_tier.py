@@ -2,6 +2,36 @@ from django.db import migrations, models
 import django.db.models.deletion
 
 
+def create_free_plan(apps, schema_editor):
+    PricingPlan = apps.get_model("payments", "PricingPlan")
+    PricingPlan.objects.get_or_create(
+        name="Free",
+        defaults={
+            "price_rub": 0,
+            "period_days": 30,
+            "requests_limit": 3,
+            "features": [],
+            "is_featured": False,
+            "is_active": True,
+        },
+    )
+
+
+def free_fk_id(apps, schema_editor):
+    PricingPlan = apps.get_model("payments", "PricingPlan")
+    try:
+        return PricingPlan.objects.get(name="Free").id
+    except PricingPlan.DoesNotExist:
+        return None
+
+
+def set_null_tier(apps, schema_editor):
+    free_id = free_fk_id(apps, schema_editor)
+    TelegramUser = apps.get_model("users", "TelegramUser")
+    if free_id:
+        TelegramUser.objects.filter(subscription_tier="").update(subscription_tier=None)
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -10,6 +40,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        migrations.RunPython(create_free_plan, migrations.RunPython.noop),
         migrations.SeparateDatabaseAndState(
             state_operations=[
                 migrations.AlterField(
@@ -27,11 +58,11 @@ class Migration(migrations.Migration):
             database_operations=[
                 migrations.RunSQL(
                     sql=[
-                        'ALTER TABLE users_telegramuser DROP COLUMN subscription_tier;',
-                        'ALTER TABLE users_telegramuser ADD COLUMN subscription_tier_id integer NULL REFERENCES payments_pricingplan(id) ON DELETE SET NULL;',
+                        "ALTER TABLE users_telegramuser DROP COLUMN subscription_tier;",
+                        "ALTER TABLE users_telegramuser ADD COLUMN subscription_tier_id integer NULL REFERENCES payments_pricingplan(id) ON DELETE SET NULL;",
                     ],
                     reverse_sql=[
-                        'ALTER TABLE users_telegramuser DROP COLUMN subscription_tier_id;',
+                        "ALTER TABLE users_telegramuser DROP COLUMN subscription_tier_id;",
                         "ALTER TABLE users_telegramuser ADD COLUMN subscription_tier varchar(50) NOT NULL DEFAULT '';",
                     ],
                 ),
