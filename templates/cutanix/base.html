@@ -27,7 +27,8 @@
   <script>
     (function() {
       {% if debug %}return;{% endif %}
-      if (!window.Telegram || !window.Telegram.WebApp) {
+      var tg = window.Telegram && window.Telegram.WebApp;
+      if (!tg || !tg.initData) {
         document.getElementById('loading').innerHTML =
           '<div class="flex flex-col items-center justify-center min-h-screen px-6 text-center">' +
             '<svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#ff4444" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' +

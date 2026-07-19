@@ -749,7 +749,7 @@
   async function init() {
     if (window.__CUTANIX_BLOCKED) return;
     var tg = window.Telegram && window.Telegram.WebApp;
-    if (!tg) return;
+    if (!tg || !tg.initData) return;
     try { tg.ready(); tg.expand(); } catch(e) {}
     await loadProfile();
     hideLoading();
