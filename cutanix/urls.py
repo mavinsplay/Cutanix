@@ -1,10 +1,14 @@
+import os
+
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 
+admin_url = os.getenv("DJANGO_ADMIN_URL", "admin/")
+
 urlpatterns = [
-    path("admin/", admin.site.urls),
+    path(admin_url, admin.site.urls),
     path("api/", include("api.urls")),
     path("", include("webapp.urls")),
 ]

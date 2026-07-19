@@ -18,6 +18,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
     is_subscription_active = serializers.BooleanField(read_only=True)
     is_admin = serializers.SerializerMethodField()
     photo_url = serializers.SerializerMethodField()
+    admin_url = serializers.SerializerMethodField()
 
     def get_is_admin(self, obj):
         return obj.telegram_id in settings.ADMIN_TELEGRAM_IDS
@@ -26,10 +27,17 @@ class UserProfileSerializer(serializers.ModelSerializer):
         url = obj.photo_url
         if not url:
             return ""
+        if settings.DEBUG:
+            return url
         for prefix in ("https://t.me/", "http://t.me/"):
             if url.startswith(prefix):
-                return "/tg-avatars/" + url[len(prefix) :]
+                return "/tg-avatars/" + url[len(prefix):]
         return url
+
+    def get_admin_url(self, obj):
+        from django.urls import reverse
+
+        return reverse("admin:index")
 
     class Meta:
         model = TelegramUser
@@ -39,6 +47,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
             "first_name",
             "last_name",
             "photo_url",
+            "admin_url",
             "subscription_tier",
             "subscription_expires",
             "requests_used",
