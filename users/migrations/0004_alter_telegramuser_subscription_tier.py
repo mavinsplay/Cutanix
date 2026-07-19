@@ -12,24 +12,9 @@ def create_free_plan(apps, schema_editor):
             "requests_limit": 3,
             "features": [],
             "is_featured": False,
-            "is_active": True,
+            "is_active": False,
         },
     )
-
-
-def free_fk_id(apps, schema_editor):
-    PricingPlan = apps.get_model("payments", "PricingPlan")
-    try:
-        return PricingPlan.objects.get(name="Free").id
-    except PricingPlan.DoesNotExist:
-        return None
-
-
-def set_null_tier(apps, schema_editor):
-    free_id = free_fk_id(apps, schema_editor)
-    TelegramUser = apps.get_model("users", "TelegramUser")
-    if free_id:
-        TelegramUser.objects.filter(subscription_tier="").update(subscription_tier=None)
 
 
 class Migration(migrations.Migration):
