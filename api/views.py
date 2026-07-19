@@ -95,7 +95,7 @@ class AnalysisCreateView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-        if user.subscription_tier == "free" and image:
+        if not user.subscription_tier and image:
             return Response(
                 {"error": "Фото доступно в платных тарифах"},
                 status=status.HTTP_403_FORBIDDEN,

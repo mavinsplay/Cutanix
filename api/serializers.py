@@ -18,10 +18,16 @@ class UserProfileSerializer(serializers.ModelSerializer):
     is_admin = serializers.SerializerMethodField()
     photo_url = serializers.SerializerMethodField()
     admin_url = serializers.SerializerMethodField()
+    subscription_tier = serializers.SerializerMethodField()
 
     def get_is_admin(self, obj):
         from django.conf import settings
         return obj.telegram_id in settings.ADMIN_TELEGRAM_IDS
+
+    def get_subscription_tier(self, obj):
+        if obj.subscription_tier:
+            return obj.subscription_tier.name
+        return None
 
     def get_photo_url(self, obj):
         from django.conf import settings

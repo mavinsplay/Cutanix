@@ -10,10 +10,11 @@ class TelegramUser(models.Model):
     first_name = models.CharField(max_length=255, blank=True, default="")
     last_name = models.CharField(max_length=255, blank=True, default="")
     photo_url = models.URLField(max_length=500, blank=True, default="")
-    subscription_tier = models.CharField(
-        max_length=50,
+    subscription_tier = models.ForeignKey(
+        "payments.PricingPlan",
+        on_delete=models.SET_NULL,
+        null=True,
         blank=True,
-        default="",
         verbose_name="Тариф",
     )
     subscription_expires = models.DateTimeField(null=True, blank=True)
@@ -36,7 +37,7 @@ class TelegramUser(models.Model):
 
     def __str__(self):
         name = self.username or self.first_name
-        tier = self.subscription_tier or "free"
+        tier = self.subscription_tier.name if self.subscription_tier else "free"
         return f"{name} ({self.telegram_id}) [{tier}]"
 
     @property
@@ -71,7 +72,7 @@ class TelegramUser(models.Model):
         )
 
     def activate_subscription(self, plan, months=1):
-        self.subscription_tier = plan.name
+        self.subscription_tier = plan
         self.requests_limit = plan.requests_limit
         self.requests_used = 0
         self.subscription_expires = timezone.now() + timezone.timedelta(

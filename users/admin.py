@@ -16,6 +16,7 @@ class TelegramUserAdmin(admin.ModelAdmin):
         "subscription_expires",
     )
     list_filter = ("subscription_tier",)
+    raw_id_fields = ("subscription_tier",)
     search_fields = (
         "telegram_id",
         "username",
