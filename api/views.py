@@ -244,8 +244,8 @@ class PaymentCreateView(APIView):
         site_url = getattr(
             settings, "SITE_URL", "http://127.0.0.1:8000"
         ).rstrip("/")
-        return_url = f"{site_url}/?payment=success&payment_id={payment.id}"
-        failed_url = f"{site_url}/?payment=fail&payment_id={payment.id}"
+        return_url = f"{site_url}/payment/return/?payment_id={payment.id}"
+        failed_url = f"{site_url}/payment/return/?payment_id={payment.id}"
 
         merchant_id = getattr(
             settings, "PLATEGA_MERCHANT_ID", "your-merchant-id"
@@ -286,7 +286,7 @@ class PaymentCreateView(APIView):
                 or merchant_id in ("your-merchant-id", "demo", "test")
                 or "Connection error" in str(exc)
             ):
-                demo_redirect = f"{site_url}/?payment=success&payment_id={payment.id}&demo=1"
+                demo_redirect = f"{site_url}/payment/return/?payment_id={payment.id}&demo=1"
                 payment.platega_transaction_id = f"demo-tx-{payment.id}"
                 payment.redirect_url = demo_redirect
                 payment.save(
@@ -300,9 +300,21 @@ class PaymentCreateView(APIView):
                         "is_demo": True,
                     }
                 )
+            payment.status = "failed"
+            payment.save(update_fields=["status"])
+            cache.delete(f"payment_lock:{request.user.id}")
             return Response(
                 {"error": f"Не удалось создать платёж: {exc}"},
                 status=status.HTTP_502_BAD_GATEWAY,
+            )
+        except Exception as exc:
+            logger.warning("Unexpected error creating payment: %s", exc)
+            payment.status = "failed"
+            payment.save(update_fields=["status"])
+            cache.delete(f"payment_lock:{request.user.id}")
+            return Response(
+                {"error": "Ошибка при создании платежа. Попробуйте снова."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
 
@@ -310,6 +322,11 @@ class PaymentWebhookView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
+        logger.warning(
+            "Platega webhook received: method=%s body=%s",
+            request.method,
+            request.body[:500],
+        )
         merchant_id = getattr(
             settings, "PLATEGA_MERCHANT_ID", "your-merchant-id"
         )

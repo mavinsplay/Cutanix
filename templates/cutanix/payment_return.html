@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cutanix — Оплата</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #111118; color: #fff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .card { max-width: 380px; width: 100%; padding: 32px 24px; text-align: center; }
+    .icon { width: 72px; height: 72px; margin: 0 auto 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+    .icon-success { background: rgba(0,255,136,.12); border: 2px solid rgba(0,255,136,.3); }
+    .icon-pending { background: rgba(251,191,36,.12); border: 2px solid rgba(251,191,36,.3); }
+    .icon-fail { background: rgba(239,68,68,.12); border: 2px solid rgba(239,68,68,.3); }
+    h1 { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+    p { color: #9ca3af; font-size: 14px; line-height: 1.5; margin-bottom: 24px; }
+    .btn { display: inline-block; padding: 14px 28px; border-radius: 10px; font-size: 15px; font-weight: 600; text-decoration: none; cursor: pointer; border: none; transition: opacity .2s; }
+    .btn:hover { opacity: .85; }
+    .btn-primary { background: #00ff88; color: #0a0a0f; }
+    .btn-secondary { background: rgba(255,255,255,.08); color: #e0e0e0; border: 1px solid rgba(255,255,255,.1); margin-top: 10px; }
+    .info { background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08); border-radius: 10px; padding: 16px; margin-bottom: 24px; text-align: left; }
+    .info-row { display: flex; justify-content: space-between; font-size: 13px; padding: 6px 0; }
+    .info-label { color: #6b7280; }
+    .info-value { color: #e0e0e0; font-weight: 500; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon {% if status == 'succeeded' %}icon-success{% elif status == 'failed' %}icon-fail{% else %}icon-pending{% endif %}">
+      {% if status == 'succeeded' %}
+      <svg width="36" height="36" fill="none" stroke="#00ff88" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
+      {% elif status == 'failed' %}
+      <svg width="36" height="36" fill="none" stroke="#ef4444" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      {% else %}
+      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2" class="spin"><circle cx="12" cy="12" r="10" stroke-dasharray="60" stroke-dashoffset="15" stroke-linecap="round"/></svg>
+      {% endif %}
+    </div>
+
+    {% if status == 'succeeded' %}
+      <h1 style="color:#00ff88">Оплата прошла!</h1>
+      <p>Подписка {{ plan_name }} активирована. Вернитесь в Telegram, чтобы пользоваться приложением.</p>
+    {% elif status == 'failed' %}
+      <h1 style="color:#ef4444">Оплата не прошла</h1>
+      <p>Попробуйте другой способ оплаты или повторите позже.</p>
+    {% else %}
+      <h1 style="color:#fbbf24">Проверяем оплату...</h1>
+      <p>Обычно это занимает до 1 минуты. Не закрывайте эту страницу.</p>
+      <script>
+        var reloads = 0;
+        var timer = setInterval(function() {
+          reloads++;
+          if (reloads >= 12) { clearInterval(timer); return; }
+          location.reload();
+        }, 5000);
+      </script>
+    {% endif %}
+
+    <div class="info">
+      <div class="info-row"><span class="info-label">Тариф</span><span class="info-value">{{ plan_name }}</span></div>
+      <div class="info-row"><span class="info-label">Сумма</span><span class="info-value">{{ amount_rub }} ₽</span></div>
+      <div class="info-row"><span class="info-label">Статус</span><span class="info-value">{{ status_display }}</span></div>
+    </div>
+
+    <a class="btn btn-primary" href="https://t.me/cutanix/app">Открыть в Telegram</a>
+    <br>
+    <a class="btn btn-secondary" href="javascript:history.back()">Назад</a>
+  </div>
+
+  <style>
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    .spin { animation: spin 1s linear infinite; }
+  </style>
+</body>
+</html>
