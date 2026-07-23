@@ -183,3 +183,6 @@ media/
 
 # Ai
 .mimocode
+
+# django
+static
