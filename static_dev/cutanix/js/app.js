@@ -1,6 +1,13 @@
 (function() {
   'use strict';
 
+  if (!document.getElementById('cutanix-animations')) {
+    const s = document.createElement('style');
+    s.id = 'cutanix-animations';
+    s.textContent = '@keyframes slideDown{from{transform:translateY(-100%);opacity:0}to{transform:translateY(0);opacity:1}}@keyframes slideUp{from{transform:translateY(100%);opacity:0}to{transform:translateY(0);opacity:1}}';
+    document.head.appendChild(s);
+  }
+
   const API = '/api';
   let user = null;
   let currentTab = 'scan';
@@ -692,6 +699,7 @@
           </div>
 
           <div class="shrink-0 border-t border-[#2a2a35] pt-3">
+            <div class="pay-err-msg" style="display:none;text-align:center;padding:10px 12px;margin-bottom:12px;border-radius:8px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:#f87171;font-size:13px;font-weight:500;"></div>
             <button id="btn-pay-submit" class="btn btn-primary font-bold py-3.5 text-base shadow-lg shadow-[#00ff88]/20">
               Оплатить ${totalPrice} ₽
             </button>
@@ -734,10 +742,35 @@
             hapticOk();
             const targetUrl = res.redirect;
             overlay.remove();
-            window.location.href = targetUrl;
+            const tg = window.Telegram?.WebApp;
+            if (tg?.openLink) {
+              tg.openLink(targetUrl);
+            } else {
+              window.location.href = targetUrl;
+            }
+          } else if (res?.error) {
+            haptic('heavy');
+            const errBody = overlay.querySelector('.pay-err-msg');
+            if (errBody) {
+              errBody.textContent = res.error;
+              errBody.style.display = 'block';
+              if (res.remaining_seconds) {
+                let rem = res.remaining_seconds;
+                const timer = setInterval(() => {
+                  rem--;
+                  if (rem <= 0) { clearInterval(timer); errBody.style.display = 'none'; return; }
+                  const m = Math.floor(rem / 60);
+                  const s = rem % 60;
+                  errBody.textContent = `Подождите: ${m} мин ${s} сек`;
+                }, 1000);
+              }
+            } else {
+              alert(res.error);
+            }
+            btnSubmit.disabled = false;
+            btnSubmit.textContent = `Перейти к оплате ${totalPrice} ₽`;
           } else {
-            const err = res?.error || 'Не удалось создать платёж';
-            alert(err);
+            alert('Не удалось создать платёж');
             btnSubmit.disabled = false;
             btnSubmit.textContent = `Перейти к оплате ${totalPrice} ₽`;
           }
@@ -820,6 +853,27 @@
     document.body.appendChild(overlay);
   }
 
+  function showProcessingBanner() {
+    const existing = document.getElementById('payment-processing-banner');
+    if (existing) return;
+    const banner = document.createElement('div');
+    banner.id = 'payment-processing-banner';
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:100;padding:12px 16px;background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);border-bottom:1px solid #00ff88/30;display:flex;align-items:center;gap:10px;animation:slideDown .3s ease;font-size:13px;color:#e0e0e0;';
+    banner.innerHTML = `
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" class="animate-spin shrink-0">
+        <circle cx="12" cy="12" r="10" stroke="#00ff88" stroke-width="2.5" stroke-dasharray="60" stroke-dashoffset="15" stroke-linecap="round"/>
+      </svg>
+      <span>Оплата обрабатывается...</span>
+      <span id="payment-eta" style="margin-left:auto;color:#00ff88;font-weight:600;"></span>
+    `;
+    document.body.appendChild(banner);
+  }
+
+  function removeProcessingBanner() {
+    const b = document.getElementById('payment-processing-banner');
+    if (b) b.remove();
+  }
+
   async function checkPaymentReturn() {
     const params = new URLSearchParams(window.location.search);
     const paymentStatus = params.get('payment');
@@ -833,13 +887,24 @@
     }
 
     if (paymentStatus === 'success') {
-      const statusData = await apiGet(`/payment/status/${paymentId}/${isDemo ? '?demo=1' : ''}`);
+      showProcessingBanner();
+      const demoParam = isDemo ? '?demo=1' : '';
+      const etaEl = () => document.getElementById('payment-eta');
+      let statusData = await apiGet(`/payment/status/${paymentId}/${demoParam}`);
+      for (let i = 0; i < 6 && statusData?.status === 'pending'; i++) {
+        const secs = (6 - i) * 2;
+        if (etaEl()) etaEl().textContent = `~${secs} сек`;
+        await new Promise(r => setTimeout(r, 2000));
+        statusData = await apiGet(`/payment/status/${paymentId}/${demoParam}`);
+      }
+      removeProcessingBanner();
       hapticOk();
       showSuccessModal(statusData);
       await loadProfile();
       if (refreshPricingCards) refreshPricingCards();
       if (refreshProfileView) refreshProfileView();
     } else if (paymentStatus === 'fail') {
+      removeProcessingBanner();
       haptic('heavy');
       showFailModal();
     }
@@ -943,6 +1008,62 @@
     }
   }
 
+  function showPendingPaymentBanner(data) {
+    const existing = document.getElementById('pending-payment-banner');
+    if (existing) existing.remove();
+    const banner = document.createElement('div');
+    banner.id = 'pending-payment-banner';
+    banner.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:90;padding:14px 16px;background:linear-gradient(135deg,#1a1a2e 0%,#0f1629 100%);border-top:1px solid rgba(0,255,136,.25);display:flex;align-items:center;gap:12px;animation:slideUp .3s ease;font-size:13px;color:#e0e0e0;backdrop-filter:blur(12px);';
+    let rem = data.remaining_seconds;
+    const mins = Math.floor(rem / 60);
+    const secs = rem % 60;
+    banner.innerHTML = `
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:600;color:#fff;margin-bottom:2px;">Не оплачено: ${data.plan_name} — ${data.amount_rub} ₽</div>
+        <div style="color:#9ca3af;font-size:12px;">Осталось <span id="pending-timer">${mins} мин ${secs} сек</span></div>
+      </div>
+      <button id="pending-pay-btn" style="shrink:0;padding:8px 16px;border-radius:8px;background:#00ff88;color:#0a0a0f;font-weight:700;font-size:13px;border:none;cursor:pointer;">Оплатить</button>
+      <button id="pending-dismiss-btn" style="shrink:0;width:28px;height:28px;border-radius:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:#6b7280;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;">✕</button>
+    `;
+    document.body.appendChild(banner);
+
+    const timerEl = document.getElementById('pending-timer');
+    const interval = setInterval(() => {
+      rem--;
+      if (rem <= 0) {
+        clearInterval(interval);
+        banner.remove();
+        return;
+      }
+      const m = Math.floor(rem / 60);
+      const s = rem % 60;
+      if (timerEl) timerEl.textContent = `${m} мин ${s} сек`;
+    }, 1000);
+
+    document.getElementById('pending-pay-btn').addEventListener('click', () => {
+      haptic('light');
+      const tg = window.Telegram?.WebApp;
+      if (tg?.openLink && data.redirect_url) {
+        tg.openLink(data.redirect_url);
+      } else if (data.redirect_url) {
+        window.location.href = data.redirect_url;
+      }
+    });
+    document.getElementById('pending-dismiss-btn').addEventListener('click', () => {
+      clearInterval(interval);
+      banner.remove();
+    });
+  }
+
+  async function checkPendingPayment() {
+    try {
+      const data = await apiGet('/payment/active/');
+      if (data?.active && data.remaining_seconds > 0) {
+        showPendingPaymentBanner(data);
+      }
+    } catch(e) {}
+  }
+
   async function init() {
     if (window.__CUTANIX_BLOCKED) return;
     var tg = window.Telegram && window.Telegram.WebApp;
@@ -953,6 +1074,7 @@
     currentTab = 'scan';
     render();
     await checkPaymentReturn();
+    await checkPendingPayment();
   }
 
   document.addEventListener('DOMContentLoaded', init);

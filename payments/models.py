@@ -96,6 +96,12 @@ class Payment(models.Model):
         choices=STATUS_CHOICES,
         default="pending",
     )
+    redirect_url = models.URLField(
+        max_length=500,
+        blank=True,
+        default="",
+        verbose_name="URL редиректа на оплату",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

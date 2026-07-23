@@ -1,6 +1,7 @@
 import json
 import logging
 
+from django.core.cache import cache
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -182,6 +183,42 @@ class PaymentCreateView(APIView):
             "payment_method", Platega.METHOD_CARDS_RUB
         )
 
+        lock_key = f"payment_lock:{request.user.id}"
+        if cache.get(lock_key):
+            return Response(
+                {
+                    "error": "Платёж уже в обработке. Подождите несколько минут."
+                },
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
+        active = (
+            Payment.objects.filter(user=request.user, status="pending")
+            .exclude(platega_transaction_id__startswith="demo-tx-")
+            .first()
+        )
+        if active:
+            from django.utils import timezone as tz
+
+            age = (tz.now() - active.created_at).total_seconds()
+            if age < 600:
+                remaining = int(600 - age)
+                return Response(
+                    {
+                        "error": (
+                            f"Платёж уже в обработке. "
+                            f"Повторите через {remaining // 60} мин "
+                            f"{remaining % 60} сек."
+                        ),
+                        "remaining_seconds": remaining,
+                        "active_payment_id": active.id,
+                    },
+                    status=status.HTTP_429_TOO_MANY_REQUESTS,
+                )
+            else:
+                active.status = "cancelled"
+                active.save(update_fields=["status"])
+
         try:
             plan = PricingPlan.objects.get(id=plan_id, is_active=True)
         except PricingPlan.DoesNotExist:
@@ -201,6 +238,8 @@ class PaymentCreateView(APIView):
             payment_method=payment_method,
             status="pending",
         )
+
+        cache.set(lock_key, payment.id, timeout=600)
 
         site_url = getattr(
             settings, "SITE_URL", "http://127.0.0.1:8000"
@@ -226,7 +265,10 @@ class PaymentCreateView(APIView):
             )
             transaction_id = result.get("transactionId", "")
             payment.platega_transaction_id = transaction_id
-            payment.save(update_fields=["platega_transaction_id"])
+            payment.redirect_url = result.get("redirect", "")
+            payment.save(
+                update_fields=["platega_transaction_id", "redirect_url"]
+            )
 
             return Response(
                 {
@@ -246,7 +288,10 @@ class PaymentCreateView(APIView):
             ):
                 demo_redirect = f"{site_url}/?payment=success&payment_id={payment.id}&demo=1"
                 payment.platega_transaction_id = f"demo-tx-{payment.id}"
-                payment.save(update_fields=["platega_transaction_id"])
+                payment.redirect_url = demo_redirect
+                payment.save(
+                    update_fields=["platega_transaction_id", "redirect_url"]
+                )
                 return Response(
                     {
                         "redirect": demo_redirect,
@@ -256,7 +301,7 @@ class PaymentCreateView(APIView):
                     }
                 )
             return Response(
-                {"error": f"Не удалось создать платёж: {exc.message}"},
+                {"error": f"Не удалось создать платёж: {exc}"},
                 status=status.HTTP_502_BAD_GATEWAY,
             )
 
@@ -323,6 +368,8 @@ class PaymentWebhookView(APIView):
                 payment_obj.platega_transaction_id = tx_id
             payment_obj.save()
 
+            cache.delete(f"payment_lock:{payment_obj.user_id}")
+
             if payment_obj.plan:
                 payment_obj.user.activate_subscription(
                     payment_obj.plan, months=payment_obj.months
@@ -337,11 +384,13 @@ class PaymentWebhookView(APIView):
         elif callback.is_canceled():
             payment_obj.status = "cancelled"
             payment_obj.save()
+            cache.delete(f"payment_lock:{payment_obj.user_id}")
             return Response("OK", status=status.HTTP_200_OK)
 
         elif callback.is_chargeback():
             payment_obj.status = "failed"
             payment_obj.save()
+            cache.delete(f"payment_lock:{payment_obj.user_id}")
             return Response("OK", status=status.HTTP_200_OK)
 
         return Response("OK", status=status.HTTP_200_OK)
@@ -362,7 +411,17 @@ class PaymentStatusView(APIView):
         if is_demo and payment.status == "pending":
             payment.status = "succeeded"
             payment.save()
+            cache.delete(f"payment_lock:{payment.user_id}")
             if payment.plan:
+                payment.user.activate_subscription(
+                    payment.plan, months=payment.months
+                )
+        elif payment.status == "succeeded" and payment.plan:
+            cache.delete(f"payment_lock:{payment.user_id}")
+            if (
+                not payment.user.subscription_tier
+                or payment.user.subscription_tier != payment.plan
+            ):
                 payment.user.activate_subscription(
                     payment.plan, months=payment.months
                 )
@@ -377,5 +436,39 @@ class PaymentStatusView(APIView):
                 "requests_limit": (
                     payment.plan.requests_limit if payment.plan else 0
                 ),
+            }
+        )
+
+
+class ActivePaymentView(APIView):
+    def get(self, request):
+        from django.utils import timezone as tz
+
+        now = tz.now()
+        payment = (
+            Payment.objects.filter(user=request.user, status="pending")
+            .exclude(platega_transaction_id__startswith="demo-tx-")
+            .order_by("-created_at")
+            .first()
+        )
+        if not payment:
+            return Response({"active": False})
+
+        age = (now - payment.created_at).total_seconds()
+        if age >= 600:
+            payment.status = "cancelled"
+            payment.save(update_fields=["status"])
+            return Response({"active": False})
+
+        remaining = int(600 - age)
+        return Response(
+            {
+                "active": True,
+                "payment_id": payment.id,
+                "redirect_url": payment.redirect_url or "",
+                "plan_name": payment.plan.name if payment.plan else "",
+                "amount_rub": payment.amount_rub,
+                "remaining_seconds": remaining,
+                "created_at": payment.created_at.isoformat(),
             }
         )

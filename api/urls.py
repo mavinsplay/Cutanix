@@ -52,4 +52,9 @@ urlpatterns = [
         views.PaymentStatusView.as_view(),
         name="payment-status",
     ),
+    path(
+        "payment/active/",
+        views.ActivePaymentView.as_view(),
+        name="payment-active",
+    ),
 ]
