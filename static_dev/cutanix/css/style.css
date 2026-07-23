@@ -77,3 +77,72 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 .modal-in { animation: modalIn 0.32s cubic-bezier(0.16, 1, 0.3, 1); }
+
+/* Payment Methods & Success Modal Styles */
+.pay-method-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  background: #14141d;
+  border: 1px solid #2a2a35;
+  border-radius: 14px;
+  cursor: pointer;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.pay-method-card:hover {
+  background: #1c1c28;
+  border-color: rgba(0, 255, 136, 0.4);
+}
+.pay-method-card.active {
+  background: rgba(0, 255, 136, 0.07);
+  border-color: #00ff88;
+  box-shadow: 0 0 16px rgba(0, 255, 136, 0.15);
+}
+.pay-radio-ring {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid #3f3f4e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+.pay-method-card.active .pay-radio-ring {
+  border-color: #00ff88;
+  background: #00ff88;
+}
+.pay-radio-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #0a0a0f;
+  opacity: 0;
+  transform: scale(0.5);
+  transition: all 0.2s ease;
+}
+.pay-method-card.active .pay-radio-dot {
+  opacity: 1;
+  transform: scale(1);
+}
+
+@keyframes successBounce {
+  0% { transform: scale(0); opacity: 0; }
+  60% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.success-check-icon {
+  animation: successBounce 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@keyframes successPulseRing {
+  0% { box-shadow: 0 0 0 0 rgba(0, 255, 136, 0.4); }
+  70% { box-shadow: 0 0 0 24px rgba(0, 255, 136, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(0, 255, 136, 0); }
+}
+.pulse-ring-emerald {
+  animation: successPulseRing 2s infinite;
+}

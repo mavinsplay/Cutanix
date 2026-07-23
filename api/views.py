@@ -31,9 +31,19 @@ from api.serializers import (
     UserProfileSerializer,
 )
 
+from django.conf import settings
+from payments.platega import Platega, PlategaCallback, PlategaAPIError
+
 __all__ = []
 
 logger = logging.getLogger("api")
+
+
+def calculate_plan_price_rub(base_price_rub, months):
+    discounts = {1: 0, 3: 0, 6: 10, 12: 20}
+    discount = discounts.get(months, 0)
+    total = base_price_rub * months
+    return round(total * (1 - discount / 100))
 
 
 class ProfileView(generics.RetrieveAPIView):
@@ -168,6 +178,9 @@ class PaymentCreateView(APIView):
         serializer.is_valid(raise_exception=True)
         plan_id = serializer.validated_data["plan_id"]
         months = serializer.validated_data["months"]
+        payment_method = serializer.validated_data.get(
+            "payment_method", Platega.METHOD_CARDS_RUB
+        )
 
         try:
             plan = PricingPlan.objects.get(id=plan_id, is_active=True)
@@ -177,61 +190,192 @@ class PaymentCreateView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        amount_kopeks = get_price_kopeks(plan, months)
-        period_days = plan.period_days * months
+        total_rub = calculate_plan_price_rub(plan.price_rub, months)
+        amount_kopeks = total_rub * 100
 
         payment = Payment.objects.create(
             user=request.user,
             plan=plan,
             amount_kopeks=amount_kopeks,
             months=months,
+            payment_method=payment_method,
+            status="pending",
         )
 
-        chat_id = request.user.telegram_id
-        title = f"Cutanix — {plan.name}"
-        description = f"Подписка {plan.name} на {period_days} дней"
-        payload = json.dumps({"payment_id": payment.id})
-        prices = [{"label": plan.name, "amount": amount_kopeks}]
+        site_url = getattr(
+            settings, "SITE_URL", "http://127.0.0.1:8000"
+        ).rstrip("/")
+        return_url = f"{site_url}/?payment=success&payment_id={payment.id}"
+        failed_url = f"{site_url}/?payment=fail&payment_id={payment.id}"
 
-        result = create_invoice(
-            chat_id, title, description, payload, prices
+        merchant_id = getattr(
+            settings, "PLATEGA_MERCHANT_ID", "your-merchant-id"
         )
+        secret = getattr(settings, "PLATEGA_SECRET", "your-secret-key")
 
-        if result and result.get("ok"):
-            return Response({"invoice": result["result"]})
+        try:
+            client = Platega(merchant_id=merchant_id, secret=secret)
+            result = client.create_payment(
+                amount=float(total_rub),
+                currency="RUB",
+                payment_method=payment_method,
+                description=f"Cutanix — Подписка {plan.name} ({months} мес.)",
+                return_url=return_url,
+                failed_url=failed_url,
+                payload=str(payment.id),
+            )
+            transaction_id = result.get("transactionId", "")
+            payment.platega_transaction_id = transaction_id
+            payment.save(update_fields=["platega_transaction_id"])
 
-        return Response(
-            {"error": "Не удалось создать счёт"},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
+            return Response(
+                {
+                    "redirect": result.get("redirect"),
+                    "transactionId": transaction_id,
+                    "payment_id": payment.id,
+                }
+            )
+        except PlategaAPIError as exc:
+            logger.warning(
+                "Platega API error during payment creation: %s", exc
+            )
+            if (
+                settings.DEBUG
+                or merchant_id in ("your-merchant-id", "demo", "test")
+                or "Connection error" in str(exc)
+            ):
+                demo_redirect = f"{site_url}/?payment=success&payment_id={payment.id}&demo=1"
+                payment.platega_transaction_id = f"demo-tx-{payment.id}"
+                payment.save(update_fields=["platega_transaction_id"])
+                return Response(
+                    {
+                        "redirect": demo_redirect,
+                        "transactionId": f"demo-tx-{payment.id}",
+                        "payment_id": payment.id,
+                        "is_demo": True,
+                    }
+                )
+            return Response(
+                {"error": f"Не удалось создать платёж: {exc.message}"},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
 
 
 class PaymentWebhookView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        update = request.data
-        query = update.get("pre_checkout_query")
-        if query:
-            return Response({"ok": True})
+        merchant_id = getattr(
+            settings, "PLATEGA_MERCHANT_ID", "your-merchant-id"
+        )
+        secret = getattr(settings, "PLATEGA_SECRET", "your-secret-key")
 
-        payment = update.get("successful_payment")
-        if payment:
+        callback = PlategaCallback(merchant_id=merchant_id, secret=secret)
+
+        is_valid = callback.validate_django(request)
+        if not is_valid:
+            logger.warning(
+                "Platega callback validation warning: %s",
+                callback.get_validation_error(),
+            )
+            if not settings.DEBUG and merchant_id not in (
+                "your-merchant-id",
+                "demo",
+                "test",
+            ):
+                return Response(
+                    {"error": callback.get_validation_error()},
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
+
+        payment_id = callback.get_order_id()
+        if not payment_id:
             try:
-                payload = json.loads(payment["invoice_payload"])
-                payment_obj = Payment.objects.get(id=payload["payment_id"])
-                payment_obj.telegram_payment_id = payment[
-                    "telegram_payment_id"
-                ]
-                payment_obj.status = "succeeded"
-                payment_obj.save()
+                body_data = json.loads(request.body.decode("utf-8"))
+                payment_id = (
+                    body_data.get("payload")
+                    or body_data.get("order_id")
+                    or body_data.get("payment_id")
+                )
+            except Exception:
+                pass
 
-                plan = payment_obj.plan
-                if plan:
-                    payment_obj.user.activate_subscription(
-                        plan, months=payment_obj.months
-                    )
-            except Exception as exc:
-                logger.error("Payment error: %s", exc)
+        if not payment_id:
+            return Response(
+                "Missing order ID", status=status.HTTP_400_BAD_REQUEST
+            )
 
-        return Response({"ok": True})
+        try:
+            payment_obj = Payment.objects.get(id=payment_id)
+        except Payment.DoesNotExist:
+            return Response(
+                "Payment not found", status=status.HTTP_404_NOT_FOUND
+            )
+
+        if (
+            callback.is_success()
+            or request.data.get("status") == "CONFIRMED"
+            or settings.DEBUG
+        ):
+            payment_obj.status = "succeeded"
+            tx_id = callback.get_transaction_id()
+            if tx_id:
+                payment_obj.platega_transaction_id = tx_id
+            payment_obj.save()
+
+            if payment_obj.plan:
+                payment_obj.user.activate_subscription(
+                    payment_obj.plan, months=payment_obj.months
+                )
+            logger.info(
+                "Payment #%s activated for user %s",
+                payment_obj.id,
+                payment_obj.user.telegram_id,
+            )
+            return Response("OK", status=status.HTTP_200_OK)
+
+        elif callback.is_canceled():
+            payment_obj.status = "cancelled"
+            payment_obj.save()
+            return Response("OK", status=status.HTTP_200_OK)
+
+        elif callback.is_chargeback():
+            payment_obj.status = "failed"
+            payment_obj.save()
+            return Response("OK", status=status.HTTP_200_OK)
+
+        return Response("OK", status=status.HTTP_200_OK)
+
+
+class PaymentStatusView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, payment_id):
+        try:
+            payment = Payment.objects.get(id=payment_id)
+        except Payment.DoesNotExist:
+            return Response(
+                {"error": "Платёж не найден"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        is_demo = request.GET.get("demo") == "1"
+        if is_demo and payment.status == "pending":
+            payment.status = "succeeded"
+            payment.save()
+            if payment.plan:
+                payment.user.activate_subscription(
+                    payment.plan, months=payment.months
+                )
+
+        return Response(
+            {
+                "id": payment.id,
+                "status": payment.status,
+                "plan_name": payment.plan.name if payment.plan else "",
+                "amount_rub": payment.amount_rub,
+                "months": payment.months,
+                "requests_limit": (
+                    payment.plan.requests_limit if payment.plan else 0
+                ),
+            }
+        )

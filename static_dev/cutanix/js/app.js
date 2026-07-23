@@ -100,12 +100,18 @@
         return;
       }
       if (data && data.status === 'failed') {
-        resultEl.innerHTML = '<div class="bg-card p-4 text-center text-red-400 text-sm">Ошибка анализа</div>';
+        const errMsg = data?.result?.error || 'Ошибка анализа';
+        resultEl.innerHTML = `
+          <div class="bg-card p-4 text-center text-red-400 text-sm">
+            <p class="font-medium mb-1">Не удалось проанализировать</p>
+            <p class="text-xs text-gray-500">${esc(errMsg)}</p>
+            <p class="text-xs text-gray-500 mt-1">Попробуйте ввести состав вручную</p>
+          </div>`;
         return;
       }
       await sleep(1500);
     }
-    resultEl.innerHTML = '<div class="bg-card p-4 text-center text-red-400 text-sm">Превышено время ожидания</div>';
+    resultEl.innerHTML = '<div class="bg-card p-4 text-center text-red-400 text-sm">Превышено время ожидания. Попробуйте позже.</div>';
   }
 
   async function loadProfile() {
@@ -513,10 +519,14 @@
     });
   }
 
+  let currentPlansList = [];
+  let selectedMonths = 1;
+
   function renderPricing(el) {
     el.innerHTML = `<h1 class="text-2xl font-bold mb-6"><span class="inline-flex items-center">${ICONS.pricing}</span> <span class="text-[#00ff88]">Подписки</span></h1>` + spinnerHTML('Загрузка...');
     apiGet('/pricing/').then(plans => {
       if (!plans?.length) { el.innerHTML = `<h1 class="text-2xl font-bold mb-6"><span class="inline-flex items-center">${ICONS.pricing}</span> <span class="text-[#00ff88]">Подписки</span></h1><div class="text-center text-gray-400 py-8 fade-in">Нет доступных тарифов</div>`; return; }
+      currentPlansList = plans;
 
       const monthsOptions = [
         { value: 1, label: '1 мес', discount: 0 },
@@ -581,9 +591,13 @@
           haptic('light');
           selectedMonths = parseInt(b.dataset.months);
           btns.forEach(x => {
-            x.classList.toggle('text-[#0a0a0f]', parseInt(x.dataset.months) === selectedMonths);
-            x.classList.toggle('text-gray-400', parseInt(x.dataset.months) !== selectedMonths);
-            x.classList.toggle('hover:text-gray-300', parseInt(x.dataset.months) !== selectedMonths);
+            const isActive = parseInt(x.dataset.months) === selectedMonths;
+            x.classList.toggle('text-[#0a0a0f]', isActive);
+            x.classList.toggle('text-gray-400', !isActive);
+            x.classList.toggle('hover:text-gray-300', !isActive);
+            const disc = x.querySelector('span');
+            if (disc) disc.classList.toggle('text-[#0a0a0f]', isActive);
+            if (disc) disc.classList.toggle('text-[#00ff88]', !isActive);
           });
           const idx = monthsOptions.findIndex(o => o.value === selectedMonths);
           slider.style.transform = `translateX(${idx * 100}%)`;
@@ -599,32 +613,243 @@
     });
   }
 
-  let selectedMonths = 1;
+  const PAYMENT_METHOD_ARTS = {
+    2: `<div class="w-10 h-10 rounded-xl bg-[#161622] border border-[#262638] flex items-center justify-center shrink-0 overflow-hidden"><img src="https://gist.githubusercontent.com/PonomareVlad/e901e3e50e7b1c1b80c2f05f7b968758/raw/SBP.svg" alt="СБП" class="w-8 h-8 object-contain" /></div>`,
+    10: `<div class="w-10 h-10 rounded-xl bg-[#161622] border border-[#262638] flex items-center justify-center shrink-0 overflow-hidden"><img src="https://cdn.worldvectorlogo.com/logos/national-payment-system-mir.svg" alt="МИР" class="w-8 h-8 object-contain" /></div>`,
+    13: `<div class="w-10 h-10 rounded-xl bg-[#161622] border border-[#262638] flex items-center justify-center shrink-0 overflow-hidden"><img src="https://upload.wikimedia.org/wikipedia/commons/4/46/Bitcoin.svg" alt="Bitcoin" class="w-7 h-7 object-contain" /></div>`,
+    12: `<div class="w-10 h-10 rounded-xl bg-[#161622] border border-[#262638] flex items-center justify-center shrink-0 overflow-hidden"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg></div>`,
+    11: `<div class="w-10 h-10 rounded-xl bg-[#161622] border border-[#262638] flex items-center justify-center shrink-0 overflow-hidden"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg></div>`,
+  };
 
-  window.activatePlan = async function(planId, btn) {
-    btn.disabled = true;
-    btn.textContent = 'Оплата...';
-    try {
-      const data = await apiPost('/payment/create/', { plan_id: planId, months: selectedMonths });
-      if (data?.invoice) {
-        haptic('heavy');
-        window.Telegram?.WebApp?.openInvoice(data.invoice.invoice_link, async (status) => {
-          if (status === 'paid' || status === 'cancelled') {
-            await loadProfile();
-            if (refreshPricingCards) refreshPricingCards();
-            if (refreshProfileView) refreshProfileView();
-          }
-          btn.disabled = false;
-          btn.textContent = 'Выбрать';
+  const PAYMENT_METHODS = [
+    {
+      id: 2,
+      name: 'СБП (QR-код)',
+      desc: 'Оплата по QR-коду через приложение банка',
+    },
+    {
+      id: 10,
+      name: 'Карта МИР (РФ)',
+      desc: 'Банковские карты МИР, Visa, Mastercard РФ',
+    },
+    {
+      id: 13,
+      name: 'Криптовалюта (Bitcoin / USDT)',
+      desc: 'BTC, USDT, TON, ETH и другие метавалюты',
+    },
+    {
+      id: 12,
+      name: 'Зарубежная карта (Visa / Mastercard)',
+      desc: 'Международные карты Visa и Mastercard',
+    },
+    {
+      id: 11,
+      name: 'Карточный эквайринг',
+      desc: 'Прямой онлайн-эквайринг картой',
+    },
+  ];
+
+  function openPaymentModal(plan, months) {
+    const discounts = { 1: 0, 3: 0, 6: 10, 12: 20 };
+    const discount = discounts[months] || 0;
+    const totalBefore = plan.price_rub * months;
+    const totalPrice = Math.round(totalBefore * (1 - discount / 100));
+
+    let selectedMethod = 2;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/75 backdrop-blur px-3 py-3 sm:px-4';
+
+    function renderModalContent() {
+      overlay.innerHTML = `
+        <div class="bg-card p-5 max-w-md w-full border border-[#00ff88]/30 modal-in relative overflow-hidden rounded-2xl max-h-[90vh] flex flex-col">
+          <div class="flex items-start justify-between mb-3 border-b border-[#2a2a35] pb-3 shrink-0">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="text-[11px] font-semibold text-[#00ff88] tracking-wider uppercase">Оплата подписки</span>
+              </div>
+              <h3 class="text-xl font-bold text-white mt-0.5">${esc(plan.name)}</h3>
+              <p class="text-xs text-gray-400 mt-0.5">${months} ${months === 1 ? 'месяц' : months < 5 ? 'месяца' : 'месяцев'} · <span class="text-[#00ff88] font-bold">${totalPrice} ₽</span></p>
+            </div>
+            <button class="text-gray-400 hover:text-white text-2xl leading-none -mt-1 p-1" onclick="haptic('light'); this.closest('.fixed').remove()">×</button>
+          </div>
+
+          <p class="text-xs text-gray-400 font-medium mb-2.5 shrink-0">Выберите способ оплаты:</p>
+
+          <div class="space-y-2 overflow-y-auto pr-1 mb-4 flex-1" id="payment-methods-list">
+            ${PAYMENT_METHODS.map(m => `
+              <div class="pay-method-card ${m.id === selectedMethod ? 'active' : ''}" data-id="${m.id}">
+                ${PAYMENT_METHOD_ARTS[m.id] || ''}
+                <div class="flex-1 min-w-0">
+                  <span class="text-sm font-semibold text-white block">${esc(m.name)}</span>
+                  <p class="text-[11px] text-gray-400 leading-tight mt-0.5">${esc(m.desc)}</p>
+                </div>
+                <div class="pay-radio-ring">
+                  <div class="pay-radio-dot"></div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+
+          <div class="shrink-0 border-t border-[#2a2a35] pt-3">
+            <button id="btn-pay-submit" class="btn btn-primary font-bold py-3.5 text-base shadow-lg shadow-[#00ff88]/20">
+              Оплатить ${totalPrice} ₽
+            </button>
+            <p class="text-[10px] text-gray-500 text-center mt-2 flex items-center justify-center gap-1">
+              <svg class="w-3 h-3 text-[#00ff88]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+              Защищённое SSL соединение Platega
+            </p>
+          </div>
+        </div>
+      `;
+
+      const methodCards = overlay.querySelectorAll('.pay-method-card');
+      methodCards.forEach(card => {
+        card.addEventListener('click', () => {
+          haptic('light');
+          selectedMethod = parseInt(card.dataset.id);
+          methodCards.forEach(c => c.classList.toggle('active', parseInt(c.dataset.id) === selectedMethod));
         });
-      } else {
-        btn.textContent = 'Ошибка';
-        btn.disabled = false;
-      }
-    } catch(e) {
-      btn.textContent = 'Ошибка';
-      btn.disabled = false;
+      });
+
+      const btnSubmit = overlay.querySelector('#btn-pay-submit');
+      btnSubmit.addEventListener('click', async () => {
+        haptic('medium');
+        btnSubmit.disabled = true;
+        btnSubmit.innerHTML = `
+          <svg width="20" height="20" viewBox="0 0 40 40" class="animate-spin inline-block mr-2">
+            <circle cx="20" cy="20" r="16" fill="none" stroke="#0a0a0f" stroke-width="4" stroke-dasharray="80" stroke-dashoffset="60" stroke-linecap="round"/>
+          </svg>
+          Создание платежа...
+        `;
+
+        try {
+          const res = await apiPost('/payment/create/', {
+            plan_id: plan.id,
+            months: months,
+            payment_method: selectedMethod,
+          });
+
+          if (res?.redirect) {
+            hapticOk();
+            const targetUrl = res.redirect;
+            overlay.remove();
+            window.location.href = targetUrl;
+          } else {
+            const err = res?.error || 'Не удалось создать платёж';
+            alert(err);
+            btnSubmit.disabled = false;
+            btnSubmit.textContent = `Перейти к оплате ${totalPrice} ₽`;
+          }
+        } catch(e) {
+          alert('Ошибка соединения при создании платежа');
+          btnSubmit.disabled = false;
+          btnSubmit.textContent = `Перейти к оплате ${totalPrice} ₽`;
+        }
+      });
     }
+
+    renderModalContent();
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) overlay.remove();
+    });
+    document.body.appendChild(overlay);
+  }
+
+  function showSuccessModal(data) {
+    const planName = data?.plan_name || 'Подписка';
+    const limit = data?.requests_limit || 50;
+    const months = data?.months || 1;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur px-4';
+    overlay.innerHTML = `
+      <div class="bg-card p-6 max-w-sm w-full border border-[#00ff88]/40 modal-in text-center relative overflow-hidden">
+        <div class="absolute -top-12 -right-12 w-32 h-32 bg-[#00ff88]/15 rounded-full blur-2xl pointer-events-none"></div>
+        <div class="w-20 h-20 mx-auto mb-4 rounded-full bg-[#00ff88]/15 border border-[#00ff88]/30 flex items-center justify-center pulse-ring-emerald">
+          <svg class="w-10 h-10 text-[#00ff88] success-check-icon" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/>
+          </svg>
+        </div>
+        <h2 class="text-2xl font-extrabold text-white mb-1">Оплата успешна!</h2>
+        <p class="text-xs text-[#00ff88] font-semibold uppercase tracking-wider mb-4">Спасибо за покупку</p>
+        
+        <div class="bg-card-inner p-4 mb-5 space-y-2.5 text-left border border-[#2a2a35]">
+          <div class="flex justify-between items-center text-sm">
+            <span class="text-gray-400">Тариф</span>
+            <span class="font-bold text-[#00ff88]">${esc(planName)}</span>
+          </div>
+          <div class="flex justify-between items-center text-sm">
+            <span class="text-gray-400">Срок действия</span>
+            <span class="font-medium">${months * 30} дней</span>
+          </div>
+          <div class="flex justify-between items-center text-sm">
+            <span class="text-gray-400">Лимит проверок</span>
+            <span class="font-medium text-white">${limit} / мес</span>
+          </div>
+          <div class="pt-2 border-t border-[#2a2a35] text-xs text-gray-400 flex items-center gap-1.5">
+            <span class="text-[#00ff88]">✓</span> Анализ состава по фото полностью разблокирован
+          </div>
+        </div>
+
+        <button class="btn btn-primary font-bold py-3.5 text-base shadow-lg shadow-[#00ff88]/20" onclick="haptic('light'); this.closest('.fixed').remove(); switchTab('scan');">
+          Начать работу
+        </button>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+  }
+
+  function showFailModal() {
+    const overlay = document.createElement('div');
+    overlay.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur px-4';
+    overlay.innerHTML = `
+      <div class="bg-card p-6 max-w-sm w-full border border-red-500/30 modal-in text-center">
+        <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-red-500/10 border border-red-500/30 flex items-center justify-center">
+          <svg class="w-8 h-8 text-red-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </div>
+        <h2 class="text-xl font-bold text-white mb-2">Платёж отменён</h2>
+        <p class="text-gray-400 text-sm mb-5">Оплата не была завершена. Вы можете выбрать другой способ оплаты и попробовать снова.</p>
+        <button class="btn btn-secondary" onclick="haptic('light'); this.closest('.fixed').remove(); switchTab('pricing');">
+          Попробовать снова
+        </button>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+  }
+
+  async function checkPaymentReturn() {
+    const params = new URLSearchParams(window.location.search);
+    const paymentStatus = params.get('payment');
+    const paymentId = params.get('payment_id');
+    const isDemo = params.get('demo') === '1';
+
+    if (!paymentStatus || !paymentId) return;
+
+    if (window.history.replaceState) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    if (paymentStatus === 'success') {
+      const statusData = await apiGet(`/payment/status/${paymentId}/${isDemo ? '?demo=1' : ''}`);
+      hapticOk();
+      showSuccessModal(statusData);
+      await loadProfile();
+      if (refreshPricingCards) refreshPricingCards();
+      if (refreshProfileView) refreshProfileView();
+    } else if (paymentStatus === 'fail') {
+      haptic('heavy');
+      showFailModal();
+    }
+  }
+
+  window.activatePlan = function(planId, btn) {
+    haptic('light');
+    const plan = currentPlansList.find(p => p.id === planId);
+    if (!plan) return;
+    openPaymentModal(plan, selectedMonths);
   };
 
   window.switchTab = function(tab) {
@@ -727,6 +952,7 @@
     hideLoading();
     currentTab = 'scan';
     render();
+    await checkPaymentReturn();
   }
 
   document.addEventListener('DOMContentLoaded', init);

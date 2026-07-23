@@ -42,7 +42,9 @@ class TelegramUser(models.Model):
 
     def __str__(self):
         name = self.username or self.first_name
-        tier = self.subscription_tier.name if self.subscription_tier else "free"
+        tier = (
+            self.subscription_tier.name if self.subscription_tier else "free"
+        )
         return f"{name} ({self.telegram_id}) [{tier}]"
 
     @property

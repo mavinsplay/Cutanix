@@ -73,11 +73,23 @@ class Payment(models.Model):
         default=1,
         verbose_name="Месяцев",
     )
+    payment_method = models.PositiveIntegerField(
+        default=10,
+        verbose_name="Способ оплаты",
+    )
+    platega_transaction_id = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        default=None,
+        verbose_name="ID транзакции Platega",
+    )
     telegram_payment_id = models.CharField(
         max_length=255,
-        unique=True,
         blank=True,
-        default="",
+        null=True,
+        default=None,
+        verbose_name="ID платежа Telegram",
     )
     status = models.CharField(
         max_length=10,
@@ -92,7 +104,12 @@ class Payment(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"Payment {self.telegram_payment_id} [{self.status}]"
+        tx_id = (
+            self.platega_transaction_id
+            or self.telegram_payment_id
+            or str(self.id)
+        )
+        return f"Payment {tx_id} [{self.status}]"
 
     @property
     def amount_rub(self):

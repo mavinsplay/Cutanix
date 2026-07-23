@@ -42,4 +42,14 @@ urlpatterns = [
         views.PaymentWebhookView.as_view(),
         name="payment-webhook",
     ),
+    path(
+        "payment/callback/",
+        views.PaymentWebhookView.as_view(),
+        name="payment-callback",
+    ),
+    path(
+        "payment/status/<int:payment_id>/",
+        views.PaymentStatusView.as_view(),
+        name="payment-status",
+    ),
 ]

@@ -277,6 +277,16 @@ TOGETHER_API_KEY = os.getenv(
     "TOGETHER_API_KEY",
     "",
 )
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+
+PLATEGA_MERCHANT_ID = os.getenv(
+    "PLATEGA_MERCHANT_ID",
+    "your-merchant-id",
+)
+PLATEGA_SECRET = os.getenv(
+    "PLATEGA_SECRET",
+    "your-secret-key",
+)
 
 LOG_DIR = BASE_DIR / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -332,9 +342,10 @@ if DEBUG:
     def _show_toolbar(request):
         """Show toolbar only on admin and __debug__ routes."""
         return request.path.startswith("/admin/") or request.path.startswith(
-            "/__debug__/"
+            "/__debug__/",
         )
 
     DEBUG_TOOLBAR_CONFIG = {
         "SHOW_TOOLBAR_CALLBACK": _show_toolbar,
+        "IS_RUNNING_TESTS": False,
     }

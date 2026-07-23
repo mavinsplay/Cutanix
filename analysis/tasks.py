@@ -31,7 +31,12 @@ def run_analysis_task(self, task_id):
 
         if not text:
             task.status = "failed"
-            task.result = {"error": "Не удалось извлечь состав"}
+            task.result = {
+                "error": (
+                    "Не удалось распознать состав с фото. "
+                    "Попробуйте ввести INCI-состав вручную."
+                )
+            }
             task.save(
                 update_fields=[
                     "status",

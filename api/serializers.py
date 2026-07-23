@@ -22,6 +22,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
     def get_is_admin(self, obj):
         from django.conf import settings
+
         return obj.telegram_id in settings.ADMIN_TELEGRAM_IDS
 
     def get_subscription_tier(self, obj):
@@ -37,6 +38,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
     def get_admin_url(self, obj):
         from django.urls import reverse
+
         return reverse("admin:index")
 
     class Meta:
@@ -114,3 +116,4 @@ class PricingSerializer(serializers.Serializer):
 class PaymentCreateSerializer(serializers.Serializer):
     plan_id = serializers.IntegerField()
     months = serializers.IntegerField(min_value=1, max_value=12, default=1)
+    payment_method = serializers.IntegerField(default=10, required=False)
