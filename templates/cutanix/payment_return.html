@@ -68,6 +68,7 @@
         label.style.color = '#00ff88';
         btn.style.display = 'inline-block';
         clearInterval(pollTimer);
+        setTimeout(tryClose, 3000);
       } else if (status === 'failed' || status === 'cancelled') {
         icon.className = 'icon icon-fail';
         icon.innerHTML = '<svg width="36" height="36" fill="none" stroke="#ef4444" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>';
@@ -90,8 +91,12 @@
     }
 
     function tryClose() {
-      try { window.close(); } catch(e) {}
-      window.location.replace('https://t.me/cutanix/app?startapp=payment_succeeded');
+        var tg = window.Telegram?.WebApp;
+        if (tg && tg.close) {
+            tg.close();
+        } else {
+            window.location.replace('https://t.me/cutanix/app?startapp=payment_succeeded');
+        }
     }
 
     async function poll() {
