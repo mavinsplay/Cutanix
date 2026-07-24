@@ -580,7 +580,7 @@
               <div class="text-xs text-gray-500 mb-3">${perMonth} ₽/мес · ${days} дней</div>
               <div class="text-xs text-gray-500 mb-3">Лимит: ${plan.requests_limit} запросов/мес</div>
               <ul class="space-y-2 mb-5">${(plan.features || []).map(f => `<li class="flex items-start gap-2 text-sm text-gray-300"><span class="text-[#00ff88] mt-0.5">${ICONS.check}</span>${f}</li>`).join('')}</ul>
-              <button class="btn ${hasActive ? 'btn-secondary opacity-50 cursor-not-allowed' : 'btn-primary'}" ${hasActive ? 'disabled' : ''} onclick="activatePlan(${plan.id}, this)">${hasActive ? 'Активен' : 'Выбрать'}</button>
+              <button class="btn ${hasActive ? 'btn-renew' : 'btn-primary'}" onclick="activatePlan(${plan.id}, this)">${hasActive ? 'Продлить' : 'Выбрать'}</button>
             </div>
           `;
         }).join('');
@@ -662,7 +662,7 @@
     let selectedMethod = 2;
 
     const overlay = document.createElement('div');
-    overlay.className = 'fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/75 backdrop-blur px-3 py-3 sm:px-4';
+    overlay.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur px-3 py-3 sm:px-4';
 
     function renderModalContent() {
       overlay.innerHTML = `
@@ -677,6 +677,32 @@
             </div>
             <button class="text-gray-400 hover:text-white text-2xl leading-none -mt-1 p-1" onclick="haptic('light'); this.closest('.fixed').remove()">×</button>
           </div>
+
+          ${user?.subscription_tier ? (user.subscription_tier === plan.name ? `
+          <div style="display:flex;flex-direction:column;gap:6px;padding:12px 14px;margin-bottom:14px;border-radius:10px;background:rgba(0,255,136,.08);border:1px solid rgba(0,255,136,.2);font-size:12px;color:#00ff88;">
+            <div style="display:flex;align-items:center;gap:8px;font-weight:600;">
+              <svg width="16" height="16" fill="none" stroke="#00ff88" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
+              <span>Продление подписки</span>
+            </div>
+            <div style="padding-left:24px;display:flex;flex-direction:column;gap:3px;color:#6ee7b7;line-height:1.4;">
+              <span>Текущий тариф «${esc(user.subscription_tier)}» продлевается</span>
+              <span>• Оставшиеся дни не сгорят — срок суммируется</span>
+              <span>• Лимит увеличится: +${plan.requests_limit} запросов в месяц</span>
+            </div>
+          </div>
+          ` : `
+          <div style="display:flex;flex-direction:column;gap:6px;padding:12px 14px;margin-bottom:14px;border-radius:10px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.2);font-size:12px;color:#fbbf24;">
+            <div style="display:flex;align-items:center;gap:8px;font-weight:600;">
+              <svg width="16" height="16" fill="none" stroke="#fbbf24" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>
+              <span>Замена тарифа</span>
+            </div>
+            <div style="padding-left:24px;display:flex;flex-direction:column;gap:3px;color:#d4a855;line-height:1.4;">
+              <span>Текущий «${esc(user.subscription_tier)}» → «${esc(plan.name)}»</span>
+              <span>• Оставшиеся дни по текущему тарифу сгорят</span>
+              <span>• Лимит обновится: ${plan.requests_limit} запросов в месяц</span>
+            </div>
+          </div>
+          `) : ''}
 
           <p class="text-xs text-gray-400 font-medium mb-2.5 shrink-0">Выберите способ оплаты:</p>
 

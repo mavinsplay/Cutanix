@@ -79,10 +79,21 @@ class TelegramUser(models.Model):
         )
 
     def activate_subscription(self, plan, months=1):
-        self.subscription_tier = plan
-        self.requests_limit = plan.requests_limit
-        self.requests_used = 0
-        self.subscription_expires = timezone.now() + timezone.timedelta(
-            days=plan.period_days * months
+        now = timezone.now()
+        same_plan = self.subscription_tier_id == plan.id
+        still_active = (
+            self.subscription_expires and self.subscription_expires > now
         )
+        if same_plan and still_active:
+            self.subscription_expires += timezone.timedelta(
+                days=plan.period_days * months
+            )
+            self.requests_limit += plan.requests_limit
+        else:
+            self.subscription_tier = plan
+            self.requests_limit = plan.requests_limit
+            self.requests_used = 0
+            self.subscription_expires = now + timezone.timedelta(
+                days=plan.period_days * months
+            )
         self.save()

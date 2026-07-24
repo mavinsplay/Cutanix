@@ -442,10 +442,7 @@ class PaymentStatusView(APIView):
                 )
         elif payment.status == "succeeded" and payment.plan:
             cache.delete(f"payment_lock:{payment.user_id}")
-            if is_owner and (
-                not payment.user.subscription_tier
-                or payment.user.subscription_tier != payment.plan
-            ):
+            if is_owner:
                 payment.user.activate_subscription(
                     payment.plan, months=payment.months
                 )
