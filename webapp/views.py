@@ -36,21 +36,11 @@ def payment_return(request):
     ):
         raise Http404
 
-    status = payment.status
-    status_display = "Ожидает подтверждения"
-    if status == "succeeded":
-        status_display = "Оплачено"
-    elif status == "failed":
-        status_display = "Ошибка"
-    elif status == "cancelled":
-        status_display = "Отменено"
-
     return render(
         request,
         "cutanix/payment_return.html",
         {
-            "status": status,
-            "status_display": status_display,
+            "payment_id": payment.id,
             "plan_name": payment.plan.name if payment.plan else "",
             "amount_rub": payment.amount_rub,
         },

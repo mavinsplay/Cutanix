@@ -53,6 +53,11 @@ urlpatterns = [
         name="payment-status",
     ),
     path(
+        "payment/public-status/<int:payment_id>/",
+        views.PublicPaymentStatusView.as_view(),
+        name="payment-public-status",
+    ),
+    path(
         "payment/active/",
         views.ActivePaymentView.as_view(),
         name="payment-active",

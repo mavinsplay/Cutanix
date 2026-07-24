@@ -463,6 +463,44 @@ class PaymentStatusView(APIView):
         )
 
 
+class PublicPaymentStatusView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request, payment_id):
+        from payments.models import Payment
+
+        token = request.GET.get("token")
+        if not token:
+            return Response(
+                {"error": "Token required"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        data = Payment.verify_return_token(token)
+        if not data or data.get("pid") != payment_id:
+            return Response(
+                {"error": "Invalid token"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        try:
+            payment = Payment.objects.get(id=payment_id)
+        except Payment.DoesNotExist:
+            return Response(
+                {"error": "Платёж не найден"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        return Response(
+            {
+                "id": payment.id,
+                "status": payment.status,
+                "plan_name": payment.plan.name if payment.plan else "",
+            }
+        )
+
+
 class ActivePaymentView(APIView):
     def get(self, request):
         from django.utils import timezone as tz

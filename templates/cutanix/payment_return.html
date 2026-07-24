@@ -17,6 +17,8 @@
     .btn { display: inline-block; padding: 14px 28px; border-radius: 10px; font-size: 15px; font-weight: 600; text-decoration: none; cursor: pointer; border: none; transition: opacity .2s; }
     .btn:hover { opacity: .85; }
     .btn-primary { background: #00ff88; color: #0a0a0f; }
+    .bn { display: inline-block; padding: 14px 28px; border-radius: 10px; font-size: 15px; font-weight: 600; text-decoration: none; cursor: pointer; border: none; transition: opacity .2s; background: #00ff88; color: #0a0a0f; }
+    .bn:hover { opacity: .85; }
     .info { background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08); border-radius: 10px; padding: 16px; margin-bottom: 24px; text-align: left; }
     .info-row { display: flex; justify-content: space-between; font-size: 13px; padding: 6px 0; }
     .info-label { color: #6b7280; }
@@ -25,42 +27,89 @@
 </head>
 <body>
   <div class="card">
-    <div class="icon {% if status == 'succeeded' %}icon-success{% elif status == 'failed' %}icon-fail{% else %}icon-pending{% endif %}">
-      {% if status == 'succeeded' %}
-      <svg width="36" height="36" fill="none" stroke="#00ff88" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
-      {% elif status == 'failed' %}
-      <svg width="36" height="36" fill="none" stroke="#ef4444" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
-      {% else %}
+    <div class="icon icon-pending" id="status-icon">
       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2" class="spin"><circle cx="12" cy="12" r="10" stroke-dasharray="60" stroke-dashoffset="15" stroke-linecap="round"/></svg>
-      {% endif %}
     </div>
 
-    {% if status == 'succeeded' %}
-      <h1 style="color:#00ff88">Оплата прошла!</h1>
-      <p>Подписка {{ plan_name }} активирована.</p>
-    {% elif status == 'failed' %}
-      <h1 style="color:#ef4444">Оплата не прошла</h1>
-      <p>Попробуйте другой способ оплаты или повторите позже.</p>
-    {% else %}
-      <h1 style="color:#fbbf24">Проверяем оплату...</h1>
-      <p>Обычно это занимает до 1 минуты. Не закрывайте эту страницу.</p>
-      <script>
-        var reloads = 0;
-        var timer = setInterval(function() {
-          reloads++;
-          if (reloads >= 12) { clearInterval(timer); return; }
-          location.reload();
-        }, 5000);
-      </script>
-    {% endif %}
+    <h1 id="status-title" style="color:#fbbf24">Проверяем оплату...</h1>
+    <p id="status-text">Не закрывайте эту страницу.</p>
 
     <div class="info">
       <div class="info-row"><span class="info-label">Тариф</span><span class="info-value">{{ plan_name }}</span></div>
       <div class="info-row"><span class="info-label">Сумма</span><span class="info-value">{{ amount_rub }} ₽</span></div>
-      <div class="info-row"><span class="info-label">Статус</span><span class="info-value">{{ status_display }}</span></div>
+      <div class="info-row"><span class="info-label">Статус</span><span class="info-value" id="status-label">Проверяем...</span></div>
     </div>
 
-    <a class="btn btn-primary" href="https://t.me/cutanix/app?startapp=payment_{{ status }}">Открыть в Telegram</a>
+    <button class="bn" id="btn-close" style="display:none;" onclick="tryClose()">Вернуться в Telegram</button>
+  </div>
+
+  <script>
+    var paymentId = '{{ payment_id }}';
+    var planName = '{{ plan_name }}';
+    var amountRub = '{{ amount_rub }}';
+    var token = new URLSearchParams(window.location.search).get('token');
+    var pollTimer = null;
+    var attempts = 0;
+
+    function updateUI(status) {
+      var icon = document.getElementById('status-icon');
+      var title = document.getElementById('status-title');
+      var text = document.getElementById('status-text');
+      var label = document.getElementById('status-label');
+      var btn = document.getElementById('btn-close');
+
+      if (status === 'succeeded') {
+        icon.className = 'icon icon-success';
+        icon.innerHTML = '<svg width="36" height="36" fill="none" stroke="#00ff88" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>';
+        title.textContent = 'Оплата прошла!';
+        title.style.color = '#00ff88';
+        text.textContent = 'Подписка ' + planName + ' активирована.';
+        label.textContent = 'Оплачено';
+        label.style.color = '#00ff88';
+        btn.style.display = 'inline-block';
+        clearInterval(pollTimer);
+      } else if (status === 'failed' || status === 'cancelled') {
+        icon.className = 'icon icon-fail';
+        icon.innerHTML = '<svg width="36" height="36" fill="none" stroke="#ef4444" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>';
+        title.textContent = 'Оплата не прошла';
+        title.style.color = '#ef4444';
+        text.textContent = 'Попробуйте другой способ оплаты.';
+        label.textContent = 'Ошибка';
+        label.style.color = '#ef4444';
+        btn.style.display = 'inline-block';
+        clearInterval(pollTimer);
+      } else {
+        icon.className = 'icon icon-pending';
+        icon.innerHTML = '<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2" class="spin"><circle cx="12" cy="12" r="10" stroke-dasharray="60" stroke-dashoffset="15" stroke-linecap="round"/></svg>';
+        title.textContent = 'Проверяем оплату...';
+        title.style.color = '#fbbf24';
+        text.textContent = 'Не закрывайте эту страницу.';
+        label.textContent = 'Ожидает подтверждения';
+        label.style.color = '#fbbf24';
+      }
+    }
+
+    function tryClose() {
+      try { window.close(); } catch(e) {}
+      window.location.replace('https://t.me/cutanix/app?startapp=payment_succeeded');
+    }
+
+    async function poll() {
+      try {
+        var r = await fetch('/api/payment/public-status/' + paymentId + '/?token=' + encodeURIComponent(token));
+        var data = await r.json();
+        if (data && data.status) {
+          updateUI(data.status);
+        }
+      } catch(e) {}
+      attempts++;
+      if (attempts < 300) {
+        setTimeout(poll, 2000);
+      }
+    }
+
+    poll();
+  </script>
 
   <style>
     @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
