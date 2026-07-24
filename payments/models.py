@@ -1,3 +1,4 @@
+from django.core import signing
 from django.db import models
 
 from users.models import TelegramUser
@@ -120,3 +121,14 @@ class Payment(models.Model):
     @property
     def amount_rub(self):
         return self.amount_kopeks // 100
+
+    def sign_return_token(self):
+        return signing.dumps({"pid": self.id, "uid": self.user_id})
+
+    @staticmethod
+    def verify_return_token(token):
+        try:
+            data = signing.loads(token, max_age=86400)
+            return data
+        except signing.BadSignature:
+            return None

@@ -180,7 +180,7 @@ class PaymentCreateView(APIView):
         plan_id = serializer.validated_data["plan_id"]
         months = serializer.validated_data["months"]
         payment_method = serializer.validated_data.get(
-            "payment_method", Platega.METHOD_CARDS_RUB
+            "payment_method", Platega.METHOD_CARD_RU
         )
 
         lock_key = f"payment_lock:{request.user.id}"
@@ -244,8 +244,8 @@ class PaymentCreateView(APIView):
         site_url = getattr(
             settings, "SITE_URL", "http://127.0.0.1:8000"
         ).rstrip("/")
-        return_url = f"{site_url}/payment/return/?payment_id={payment.id}"
-        failed_url = f"{site_url}/payment/return/?payment_id={payment.id}"
+        return_url = f"{site_url}/payment/return/?payment_id={payment.id}&token={payment.sign_return_token()}"
+        failed_url = f"{site_url}/payment/return/?payment_id={payment.id}&token={payment.sign_return_token()}"
 
         merchant_id = getattr(
             settings, "PLATEGA_MERCHANT_ID", "your-merchant-id"
@@ -254,6 +254,12 @@ class PaymentCreateView(APIView):
 
         try:
             client = Platega(merchant_id=merchant_id, secret=secret)
+            logger.warning(
+                "Platega create_payment: merchant=%s method=%s amount=%s currency=RUB",
+                merchant_id,
+                payment_method,
+                float(total_rub),
+            )
             result = client.create_payment(
                 amount=float(total_rub),
                 currency="RUB",
@@ -263,6 +269,7 @@ class PaymentCreateView(APIView):
                 failed_url=failed_url,
                 payload=str(payment.id),
             )
+            logger.warning("Platega response: %s", result)
             transaction_id = result.get("transactionId", "")
             payment.platega_transaction_id = transaction_id
             payment.redirect_url = result.get("redirect", "")
@@ -286,7 +293,7 @@ class PaymentCreateView(APIView):
                 or merchant_id in ("your-merchant-id", "demo", "test")
                 or "Connection error" in str(exc)
             ):
-                demo_redirect = f"{site_url}/payment/return/?payment_id={payment.id}&demo=1"
+                demo_redirect = f"{site_url}/payment/return/?payment_id={payment.id}&token={payment.sign_return_token()}&demo=1"
                 payment.platega_transaction_id = f"demo-tx-{payment.id}"
                 payment.redirect_url = demo_redirect
                 payment.save(
@@ -425,7 +432,9 @@ class PaymentStatusView(APIView):
             )
 
         is_demo = request.GET.get("demo") == "1"
-        if is_demo and payment.status == "pending":
+        is_owner = getattr(request.user, "id", None) == payment.user_id
+
+        if is_demo and payment.status == "pending" and is_owner:
             payment.status = "succeeded"
             payment.save()
             cache.delete(f"payment_lock:{payment.user_id}")
@@ -435,7 +444,7 @@ class PaymentStatusView(APIView):
                 )
         elif payment.status == "succeeded" and payment.plan:
             cache.delete(f"payment_lock:{payment.user_id}")
-            if (
+            if is_owner and (
                 not payment.user.subscription_tier
                 or payment.user.subscription_tier != payment.plan
             ):
@@ -448,7 +457,6 @@ class PaymentStatusView(APIView):
                 "id": payment.id,
                 "status": payment.status,
                 "plan_name": payment.plan.name if payment.plan else "",
-                "amount_rub": payment.amount_rub,
                 "months": payment.months,
                 "requests_limit": (
                     payment.plan.requests_limit if payment.plan else 0

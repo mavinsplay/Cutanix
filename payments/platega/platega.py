@@ -3,11 +3,14 @@ Platega API Client
 """
 
 import json
+import logging
 from typing import Dict, Any, Optional, List
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
 from .exceptions import PlategaAPIError
+
+logger = logging.getLogger("platega")
 
 
 class Platega:
@@ -24,9 +27,7 @@ class Platega:
 
     # Payment methods
     METHOD_SBP_QR = 2  # СБП QR
-    METHOD_CARDS_RUB = 10  # Карты (RUB)
-    METHOD_CARD_ACQUIRING = 11  # Карточный эквайринг
-    METHOD_INTERNATIONAL = 12  # Международный эквайринг
+    METHOD_CARD_RU = 11  # Карты РФ (МИР, Visa, Mastercard)
     METHOD_CRYPTO = 13  # Криптовалюта
 
     # Payment statuses
@@ -155,19 +156,9 @@ class Platega:
                 "description": "СБП с QR-кодом (НСПК / QR)",
             },
             {
-                "id": Platega.METHOD_CARDS_RUB,
+                "id": Platega.METHOD_CARD_RU,
                 "name": "Карты (RUB)",
                 "description": "Российские карты (МИР, Visa, Mastercard)",
-            },
-            {
-                "id": Platega.METHOD_CARD_ACQUIRING,
-                "name": "Карточный эквайринг",
-                "description": "Общий карточный эквайринг",
-            },
-            {
-                "id": Platega.METHOD_INTERNATIONAL,
-                "name": "Международный эквайринг",
-                "description": "Международные карточные платежи",
             },
             {
                 "id": Platega.METHOD_CRYPTO,
@@ -222,6 +213,13 @@ class Platega:
         if data is not None:
             body = json.dumps(data).encode("utf-8")
 
+        logger.warning(
+            "Platega request: %s %s body=%s",
+            method,
+            url,
+            body.decode() if body else "None",
+        )
+
         request = Request(url, data=body, headers=headers, method=method)
 
         try:
@@ -231,7 +229,13 @@ class Platega:
 
         except HTTPError as e:
             try:
-                error_data = json.loads(e.read().decode("utf-8"))
+                error_body = e.read().decode("utf-8")
+                logger.warning(
+                    "Platega HTTP %s: %s",
+                    e.code,
+                    error_body,
+                )
+                error_data = json.loads(error_body)
                 message = error_data.get("message", str(e))
             except:
                 error_data = {}

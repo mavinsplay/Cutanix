@@ -17,7 +17,6 @@
     .btn { display: inline-block; padding: 14px 28px; border-radius: 10px; font-size: 15px; font-weight: 600; text-decoration: none; cursor: pointer; border: none; transition: opacity .2s; }
     .btn:hover { opacity: .85; }
     .btn-primary { background: #00ff88; color: #0a0a0f; }
-    .btn-secondary { background: rgba(255,255,255,.08); color: #e0e0e0; border: 1px solid rgba(255,255,255,.1); margin-top: 10px; }
     .info { background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08); border-radius: 10px; padding: 16px; margin-bottom: 24px; text-align: left; }
     .info-row { display: flex; justify-content: space-between; font-size: 13px; padding: 6px 0; }
     .info-label { color: #6b7280; }
@@ -38,7 +37,7 @@
 
     {% if status == 'succeeded' %}
       <h1 style="color:#00ff88">Оплата прошла!</h1>
-      <p>Подписка {{ plan_name }} активирована. Вернитесь в Telegram, чтобы пользоваться приложением.</p>
+      <p>Подписка {{ plan_name }} активирована.</p>
     {% elif status == 'failed' %}
       <h1 style="color:#ef4444">Оплата не прошла</h1>
       <p>Попробуйте другой способ оплаты или повторите позже.</p>
@@ -61,9 +60,7 @@
       <div class="info-row"><span class="info-label">Статус</span><span class="info-value">{{ status_display }}</span></div>
     </div>
 
-    <a class="btn btn-primary" href="https://t.me/cutanix/app">Открыть в Telegram</a>
-    <br>
-    <a class="btn btn-secondary" href="javascript:history.back()">Назад</a>
+    <a class="btn btn-primary" href="https://t.me/cutanix/app?startapp=payment_{{ status }}">Открыть в Telegram</a>
   </div>
 
   <style>

@@ -15,6 +15,15 @@
   let refreshProfileView = null;
   let pulseTier = null;
 
+  function showToast(message, type) {
+    var colors = { success: '#00ff88', error: '#ef4444', info: '#fbbf24' };
+    var el = document.createElement('div');
+    el.style.cssText = 'position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:9999;padding:12px 20px;border-radius:10px;font-size:14px;font-weight:600;color:#0a0a0f;background:' + (colors[type] || colors.info) + ';box-shadow:0 4px 20px rgba(0,0,0,.4);animation:slideDown .3s ease;max-width:90%;text-align:center;';
+    el.textContent = message;
+    document.body.appendChild(el);
+    setTimeout(function() { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(function() { el.remove(); }, 300); }, 3000);
+  }
+
   function getInitData() {
     try {
       const tg = window.Telegram?.WebApp;
@@ -622,10 +631,8 @@
 
   const PAYMENT_METHOD_ARTS = {
     2: `<div class="w-10 h-10 rounded-xl bg-[#161622] border border-[#262638] flex items-center justify-center shrink-0 overflow-hidden"><img src="https://gist.githubusercontent.com/PonomareVlad/e901e3e50e7b1c1b80c2f05f7b968758/raw/SBP.svg" alt="СБП" class="w-8 h-8 object-contain" /></div>`,
-    10: `<div class="w-10 h-10 rounded-xl bg-[#161622] border border-[#262638] flex items-center justify-center shrink-0 overflow-hidden"><img src="https://cdn.worldvectorlogo.com/logos/national-payment-system-mir.svg" alt="МИР" class="w-8 h-8 object-contain" /></div>`,
+    11: `<div class="w-10 h-10 rounded-xl bg-[#161622] border border-[#262638] flex items-center justify-center shrink-0 overflow-hidden"><img src="https://cdn.worldvectorlogo.com/logos/national-payment-system-mir.svg" alt="МИР" class="w-8 h-8 object-contain" /></div>`,
     13: `<div class="w-10 h-10 rounded-xl bg-[#161622] border border-[#262638] flex items-center justify-center shrink-0 overflow-hidden"><img src="https://upload.wikimedia.org/wikipedia/commons/4/46/Bitcoin.svg" alt="Bitcoin" class="w-7 h-7 object-contain" /></div>`,
-    12: `<div class="w-10 h-10 rounded-xl bg-[#161622] border border-[#262638] flex items-center justify-center shrink-0 overflow-hidden"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg></div>`,
-    11: `<div class="w-10 h-10 rounded-xl bg-[#161622] border border-[#262638] flex items-center justify-center shrink-0 overflow-hidden"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg></div>`,
   };
 
   const PAYMENT_METHODS = [
@@ -635,7 +642,7 @@
       desc: 'Оплата по QR-коду через приложение банка',
     },
     {
-      id: 10,
+      id: 11,
       name: 'Карта МИР (РФ)',
       desc: 'Банковские карты МИР, Visa, Mastercard РФ',
     },
@@ -643,16 +650,6 @@
       id: 13,
       name: 'Криптовалюта (Bitcoin / USDT)',
       desc: 'BTC, USDT, TON, ETH и другие метавалюты',
-    },
-    {
-      id: 12,
-      name: 'Зарубежная карта (Visa / Mastercard)',
-      desc: 'Международные карты Visa и Mastercard',
-    },
-    {
-      id: 11,
-      name: 'Карточный эквайринг',
-      desc: 'Прямой онлайн-эквайринг картой',
     },
   ];
 
@@ -740,8 +737,14 @@
 
           if (res?.redirect) {
             hapticOk();
-            const targetUrl = res.redirect;
             overlay.remove();
+            showPendingPaymentBanner({
+              plan_name: plan.name,
+              amount_rub: totalPrice,
+              redirect_url: res.redirect,
+              remaining_seconds: 600,
+            });
+            const targetUrl = res.redirect;
             const tg = window.Telegram?.WebApp;
             if (tg?.openLink) {
               tg.openLink(targetUrl);
@@ -1073,6 +1076,14 @@
     hideLoading();
     currentTab = 'scan';
     render();
+    var startParam = tg.initDataUnsafe && tg.initDataUnsafe.start_param;
+    if (startParam === 'payment_succeeded') {
+      showToast('Оплата прошла! Подписка активирована.', 'success');
+    } else if (startParam === 'payment_failed') {
+      showToast('Оплата не прошла. Попробуйте другой способ.', 'error');
+    } else if (startParam === 'payment_pending') {
+      showToast('Оплата обрабатывается...', 'info');
+    }
     await checkPaymentReturn();
     await checkPendingPayment();
   }

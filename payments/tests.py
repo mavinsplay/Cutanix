@@ -30,7 +30,7 @@ class PlategaPaymentTests(TestCase):
             data={
                 "plan_id": self.plan.id,
                 "months": 1,
-                "payment_method": Platega.METHOD_CARDS_RUB,
+                "payment_method": Platega.METHOD_CARD_RU,
             },
             content_type="application/json",
             HTTP_X_TELEGRAM_INIT_DATA=f"user=%7B%22id%22%3A123456789%7D",
@@ -45,7 +45,7 @@ class PlategaPaymentTests(TestCase):
         self.assertEqual(payment.user, self.user)
         self.assertEqual(payment.plan, self.plan)
         self.assertEqual(payment.status, "pending")
-        self.assertEqual(payment.payment_method, Platega.METHOD_CARDS_RUB)
+        self.assertEqual(payment.payment_method, Platega.METHOD_CARD_RU)
 
     def test_payment_status_check_and_demo_activation(self):
         payment = Payment.objects.create(
