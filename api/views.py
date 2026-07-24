@@ -2,6 +2,8 @@ import json
 import logging
 
 from django.core.cache import cache
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -325,99 +327,95 @@ class PaymentCreateView(APIView):
             )
 
 
-class PaymentWebhookView(APIView):
-    permission_classes = [AllowAny]
+@csrf_exempt
+def payment_webhook(request):
+    from django.conf import settings
 
-    def post(self, request):
+    logger.warning(
+        "Platega webhook received: method=%s body=%s",
+        request.method,
+        request.body[:500],
+    )
+    merchant_id = getattr(settings, "PLATEGA_MERCHANT_ID", "your-merchant-id")
+    secret = getattr(settings, "PLATEGA_SECRET", "your-secret-key")
+
+    callback = PlategaCallback(merchant_id=merchant_id, secret=secret)
+
+    is_valid = callback.validate_django(request)
+    if not is_valid:
         logger.warning(
-            "Platega webhook received: method=%s body=%s",
-            request.method,
-            request.body[:500],
+            "Platega callback validation warning: %s",
+            callback.get_validation_error(),
         )
-        merchant_id = getattr(
-            settings, "PLATEGA_MERCHANT_ID", "your-merchant-id"
-        )
-        secret = getattr(settings, "PLATEGA_SECRET", "your-secret-key")
-
-        callback = PlategaCallback(merchant_id=merchant_id, secret=secret)
-
-        is_valid = callback.validate_django(request)
-        if not is_valid:
-            logger.warning(
-                "Platega callback validation warning: %s",
-                callback.get_validation_error(),
-            )
-            if not settings.DEBUG and merchant_id not in (
-                "your-merchant-id",
-                "demo",
-                "test",
-            ):
-                return Response(
-                    {"error": callback.get_validation_error()},
-                    status=status.HTTP_401_UNAUTHORIZED,
-                )
-
-        payment_id = callback.get_order_id()
-        if not payment_id:
-            try:
-                body_data = json.loads(request.body.decode("utf-8"))
-                payment_id = (
-                    body_data.get("payload")
-                    or body_data.get("order_id")
-                    or body_data.get("payment_id")
-                )
-            except Exception:
-                pass
-
-        if not payment_id:
-            return Response(
-                "Missing order ID", status=status.HTTP_400_BAD_REQUEST
-            )
-
-        try:
-            payment_obj = Payment.objects.get(id=payment_id)
-        except Payment.DoesNotExist:
-            return Response(
-                "Payment not found", status=status.HTTP_404_NOT_FOUND
-            )
-
-        if (
-            callback.is_success()
-            or request.data.get("status") == "CONFIRMED"
-            or settings.DEBUG
+        if not settings.DEBUG and merchant_id not in (
+            "your-merchant-id",
+            "demo",
+            "test",
         ):
-            payment_obj.status = "succeeded"
-            tx_id = callback.get_transaction_id()
-            if tx_id:
-                payment_obj.platega_transaction_id = tx_id
-            payment_obj.save()
-
-            cache.delete(f"payment_lock:{payment_obj.user_id}")
-
-            if payment_obj.plan:
-                payment_obj.user.activate_subscription(
-                    payment_obj.plan, months=payment_obj.months
-                )
-            logger.info(
-                "Payment #%s activated for user %s",
-                payment_obj.id,
-                payment_obj.user.telegram_id,
+            return JsonResponse(
+                {"error": callback.get_validation_error()},
+                status=401,
             )
-            return Response("OK", status=status.HTTP_200_OK)
 
-        elif callback.is_canceled():
-            payment_obj.status = "cancelled"
-            payment_obj.save()
-            cache.delete(f"payment_lock:{payment_obj.user_id}")
-            return Response("OK", status=status.HTTP_200_OK)
+    body_data = {}
+    try:
+        body_data = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        pass
 
-        elif callback.is_chargeback():
-            payment_obj.status = "failed"
-            payment_obj.save()
-            cache.delete(f"payment_lock:{payment_obj.user_id}")
-            return Response("OK", status=status.HTTP_200_OK)
+    payment_id = callback.get_order_id()
+    if not payment_id:
+        payment_id = (
+            body_data.get("payload")
+            or body_data.get("order_id")
+            or body_data.get("payment_id")
+        )
 
-        return Response("OK", status=status.HTTP_200_OK)
+    if not payment_id:
+        return JsonResponse("Missing order ID", status=400, safe=False)
+
+    try:
+        payment_obj = Payment.objects.get(id=payment_id)
+    except Payment.DoesNotExist:
+        return JsonResponse("Payment not found", status=404, safe=False)
+
+    if (
+        callback.is_success()
+        or body_data.get("status") == "CONFIRMED"
+        or settings.DEBUG
+    ):
+        payment_obj.status = "succeeded"
+        tx_id = callback.get_transaction_id()
+        if tx_id:
+            payment_obj.platega_transaction_id = tx_id
+        payment_obj.save()
+
+        cache.delete(f"payment_lock:{payment_obj.user_id}")
+
+        if payment_obj.plan:
+            payment_obj.user.activate_subscription(
+                payment_obj.plan, months=payment_obj.months
+            )
+        logger.info(
+            "Payment #%s activated for user %s",
+            payment_obj.id,
+            payment_obj.user.telegram_id,
+        )
+        return JsonResponse({"status": "OK"}, status=200)
+
+    elif callback.is_canceled():
+        payment_obj.status = "cancelled"
+        payment_obj.save()
+        cache.delete(f"payment_lock:{payment_obj.user_id}")
+        return JsonResponse({"status": "OK"}, status=200)
+
+    elif callback.is_chargeback():
+        payment_obj.status = "failed"
+        payment_obj.save()
+        cache.delete(f"payment_lock:{payment_obj.user_id}")
+        return JsonResponse({"status": "OK"}, status=200)
+
+    return JsonResponse({"status": "OK"}, status=200)
 
 
 class PaymentStatusView(APIView):

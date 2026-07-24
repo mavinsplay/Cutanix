@@ -5,7 +5,7 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 
-from api.views import PaymentWebhookView
+from api.views import payment_webhook
 
 admin_url = os.getenv("DJANGO_ADMIN_URL", "admin/")
 
@@ -13,7 +13,7 @@ urlpatterns = [
     path(admin_url, admin.site.urls),
     path(
         "payment/callback/",
-        PaymentWebhookView.as_view(),
+        payment_webhook,
         name="root-payment-callback",
     ),
     path("api/", include("api.urls")),

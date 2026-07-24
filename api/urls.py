@@ -39,12 +39,12 @@ urlpatterns = [
     ),
     path(
         "payment/webhook/",
-        views.PaymentWebhookView.as_view(),
+        views.payment_webhook,
         name="payment-webhook",
     ),
     path(
         "payment/callback/",
-        views.PaymentWebhookView.as_view(),
+        views.payment_webhook,
         name="payment-callback",
     ),
     path(
