@@ -751,6 +751,7 @@
             } else {
               window.location.href = targetUrl;
             }
+            pollPaymentStatus(res.payment_id);
           } else if (res?.error) {
             haptic('heavy');
             const errBody = overlay.querySelector('.pay-err-msg');
@@ -1065,6 +1066,46 @@
         showPendingPaymentBanner(data);
       }
     } catch(e) {}
+  }
+
+  let paymentPollTimer = null;
+
+  function pollPaymentStatus(paymentId) {
+    clearInterval(paymentPollTimer);
+    showProcessingBanner();
+    var attempts = 0;
+    paymentPollTimer = setInterval(async function() {
+      attempts++;
+      if (attempts > 150) {
+        clearInterval(paymentPollTimer);
+        paymentPollTimer = null;
+        removeProcessingBanner();
+        return;
+      }
+      try {
+        var data = await apiGet('/payment/status/' + paymentId + '/');
+        if (data && data.status === 'succeeded') {
+          clearInterval(paymentPollTimer);
+          paymentPollTimer = null;
+          removeProcessingBanner();
+          hapticOk();
+          showSuccessModal(data);
+          var b = document.getElementById('pending-payment-banner');
+          if (b) b.remove();
+          await loadProfile();
+          if (refreshPricingCards) refreshPricingCards();
+          if (refreshProfileView) refreshProfileView();
+        } else if (data && (data.status === 'failed' || data.status === 'cancelled')) {
+          clearInterval(paymentPollTimer);
+          paymentPollTimer = null;
+          removeProcessingBanner();
+          haptic('heavy');
+          showFailModal();
+          var b2 = document.getElementById('pending-payment-banner');
+          if (b2) b2.remove();
+        }
+      } catch(e) {}
+    }, 2000);
   }
 
   async function init() {
